@@ -5,6 +5,8 @@ description: Use this skill when the researcher wants to bootstrap a repository 
 
 # wiki-init
 
+> **Invocation:** `wiki init [target] [--language ko|en] [--mode new|adopt] [-y]` via Bash. The unified `wiki` CLI ships with the `researchwiki` Python package (`pip install researchwiki`).
+
 Bootstrap a repository into a ResearchWiki workspace. Runs once per project. Idempotent — re-running on an initialized repo does not destroy existing content.
 
 ## Principles inheritance

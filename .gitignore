@@ -24,3 +24,8 @@ htmlcov/
 .env
 .venv/
 venv/
+
+# Build artifacts
+dist/
+*.whl
+*.tar.gz

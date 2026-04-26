@@ -5,6 +5,8 @@ description: Use this skill when the researcher wants to audit the health of an 
 
 # wiki-lint
 
+> **Invocation:** `wiki lint [--repo <path>] [--scope <list>] [--strict] [--no-write]` via Bash. The unified `wiki` CLI ships with the `researchwiki` Python package (`pip install researchwiki`).
+
 Audit an existing wiki and produce a report. Surface mechanically detectable problems; route findings to a place the researcher can act on. Never modify the wiki itself.
 
 ## Principles inheritance

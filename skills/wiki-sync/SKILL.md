@@ -5,6 +5,8 @@ description: Use this skill when the researcher wants to regenerate the Index La
 
 # wiki-sync
 
+> **Invocation:** `wiki sync [--repo <path>] [--scan-body] [--no-nag] [--no-rename-heuristic]` via Bash. The unified `wiki` CLI ships with the `researchwiki` Python package (`pip install researchwiki`).
+
 Regenerate the Index Layer and flag stale references in the Wiki Layer. The morning ritual — fast enough to run daily, comprehensive enough to catch what the researcher's code changed overnight.
 
 ## Principles inheritance

@@ -195,9 +195,9 @@ def run_init(
         f"{len(result.directories_created)} directory(ies); "
         f"skipped {len(result.files_skipped)} pre-existing file(s).\n"
         f"\nNext steps:\n"
-        f"  1. wiki-sync  — generate the first Index Layer snapshot.\n"
-        f"  2. wiki-deepscan (optional, requires Understand-Anything) — refresh the deep layer.\n"
-        f"  3. wiki-log   — record experiments, paper readings, decisions, notes."
+        f"  1. wiki sync       — generate the first Index Layer snapshot.\n"
+        f"  2. wiki deepscan   — (optional, requires Understand-Anything) refresh the deep layer.\n"
+        f"  3. wiki log ...    — record experiments, paper readings, decisions, notes."
     )
     return result
 
@@ -370,17 +370,23 @@ def _ensure_gitignore(gitignore: Path, *, entry: str) -> None:
 def _find_bundle() -> Path:
     """Locate the wiki-init bundle.
 
-    Resolution order:
-      1. `RESEARCHWIKI_BUNDLE` env override — for tests / advanced users.
+    Resolution order (first existing match wins):
+
+      1. `RESEARCHWIKI_BUNDLE` env override — explicit user/test override.
       2. `CLAUDE_PLUGIN_ROOT` env (set by Claude Code when a plugin is
          active) → `<root>/skills/wiki-init/reference/bundle/`.
-      3. Walk up from this module's source (works for editable installs
-         and for any layout where `skills/wiki-init/reference/bundle/`
-         lives as a sibling of `src/researchwiki/`).
+      3. Source-relative walk up from this module — works for
+         `pip install -e .` (editable) and any layout where
+         `skills/wiki-init/reference/bundle/` lives as a sibling of
+         `src/researchwiki/`.
+      4. Packaged bundle next to this module (`<package>/_bundle/`) —
+         the canonical location for wheel installs (`pip install
+         researchwiki`). Kept in byte-sync with the source-tree bundle
+         via `tests/test_bundle_sync.py`.
 
-    For a future wheel install with no source tree, the bundle would
-    need to be packaged inside `researchwiki/_bundle/` and located via
-    `importlib.resources` — out of scope here.
+    Returns the first option that resolves to an existing directory; if
+    none do, returns the source-relative path so the caller can produce
+    a meaningful error message naming the expected location.
     """
     import os
 
@@ -395,6 +401,15 @@ def _find_bundle() -> Path:
             return candidate
 
     here = Path(__file__).resolve()
-    # here = .../skill_factory/src/researchwiki/init.py
-    repo_root = here.parent.parent.parent  # → skill_factory/
-    return repo_root / "skills" / "wiki-init" / "reference" / "bundle"
+    # here = .../<repo>/src/researchwiki/init.py
+    source_relative = here.parent.parent.parent / "skills" / "wiki-init" / "reference" / "bundle"
+    if source_relative.is_dir():
+        return source_relative
+
+    packaged = here.parent / "_bundle"
+    if packaged.is_dir():
+        return packaged
+
+    # Nothing found — return the source-relative path so the caller's
+    # FileNotFoundError carries a reasonable hint.
+    return source_relative

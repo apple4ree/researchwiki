@@ -563,20 +563,29 @@ def _read_tokens(inline: str | None, file: str | None) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Top-level dispatcher for `python -m researchwiki <subcommand>`."""
+    """Top-level dispatcher for the unified `wiki` CLI (and `python -m researchwiki`).
+
+    Exposed as the `wiki` console script in pyproject.toml; also the entry
+    point for `python -m researchwiki <subcommand>`.
+    """
     argv = sys.argv[1:] if argv is None else argv
-    if not argv:
-        print("usage: python -m researchwiki <subcommand> [args...]", file=sys.stderr)
-        print("subcommands:", file=sys.stderr)
-        print("  init       Bootstrap a workspace (one-time)", file=sys.stderr)
-        print("  log        Add a journal entry (LLM-driven; CLI does I/O)", file=sys.stderr)
-        print("  sync       Regenerate the Index Layer", file=sys.stderr)
-        print("  lint       Audit wiki health (8 mechanical checks)", file=sys.stderr)
-        print("  deepscan   Refresh the Deep Analysis Layer + seed stubs", file=sys.stderr)
-        print("  query      Lexical search (BM25)", file=sys.stderr)
-        print("  recall     Surface stale-but-relevant pages", file=sys.stderr)
-        print("  fix-stale  Walk unresolved stale refs interactively (P3 carve-out)", file=sys.stderr)
-        return 2
+    if not argv or argv[0] in ("-h", "--help"):
+        out = sys.stdout if (argv and argv[0] in ("-h", "--help")) else sys.stderr
+        print("usage: wiki <subcommand> [args...]", file=out)
+        print("       (also accessible via `python -m researchwiki <subcommand>`)", file=out)
+        print("", file=out)
+        print("subcommands:", file=out)
+        print("  init       Bootstrap a workspace (one-time)", file=out)
+        print("  log        Add a journal entry (LLM-driven; CLI does I/O)", file=out)
+        print("  sync       Regenerate the Index Layer", file=out)
+        print("  lint       Audit wiki health (8 mechanical checks)", file=out)
+        print("  deepscan   Refresh the Deep Analysis Layer + seed stubs", file=out)
+        print("  query      Lexical search (BM25)", file=out)
+        print("  recall     Surface stale-but-relevant pages", file=out)
+        print("  fix-stale  Walk unresolved stale refs interactively (P3 carve-out)", file=out)
+        print("", file=out)
+        print("Run `wiki <subcommand> --help` for per-subcommand options.", file=out)
+        return 0 if (argv and argv[0] in ("-h", "--help")) else 2
 
     sub = argv[0]
     rest = argv[1:]

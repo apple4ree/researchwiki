@@ -5,6 +5,8 @@ description: Use this skill when the researcher wants to surface wiki pages that
 
 # wiki-recall
 
+> **Invocation:** `wiki recall [--repo <path>] [--lookback N] [--stale-since N] [--top N] [--scope <subdir>] [--include-stubs]` via Bash. The unified `wiki` CLI ships with the `researchwiki` Python package (`pip install researchwiki`).
+
 Surface wiki pages not touched in a while but sharing refs with recent log entries. Read-only, frontmatter-only, no body parsing, no synthesis.
 
 ## Principles inheritance

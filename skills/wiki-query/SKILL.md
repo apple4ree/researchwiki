@@ -5,6 +5,8 @@ description: Use this skill when the researcher wants to find a wiki page they c
 
 # wiki-query
 
+> **Invocation:** `wiki query "<query string>" [--repo <path>] [--top N] [--scope <subdir>]` via Bash. The unified `wiki` CLI ships with the `researchwiki` Python package (`pip install researchwiki`).
+
 Find a wiki page by natural-language query. Return ranked paths with extracted snippets. Never synthesize.
 
 ## Principles inheritance
@@ -35,7 +37,7 @@ Operates under P1–P8 (see `CLAUDE.md`).
 
 ## Inputs
 
-- Positional: **query string** (required). Quote if multi-word: `wiki-query "rotary attention"`.
+- Positional: **query string** (required). Quote if multi-word: `wiki query "rotary attention"`.
 - `--top N` — number of results. Default 10.
 - `--scope <all | concepts | papers | experiments | decisions>` — limit to one wiki subdirectory. Default `all` (excludes meta pages).
 - `--include-meta` — also search `wiki/log.md`, `wiki/questions.md`, `wiki/discrepancies.md`, `wiki/index.md`. Default off.
@@ -48,7 +50,7 @@ Operates under P1–P8 (see `CLAUDE.md`).
 Stdout only. No files created or modified.
 
 ```
-> wiki-query "rotary attention"
+> wiki query "rotary attention"
 
 1. ⚠ wiki/concepts/attention.md  [stale: 1 ref unaddressed for 23d]   score 8.3
    ...around line 42:

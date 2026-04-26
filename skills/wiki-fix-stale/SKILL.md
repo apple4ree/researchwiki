@@ -5,6 +5,8 @@ description: Use this skill when the researcher wants to address unresolved stal
 
 # wiki-fix-stale
 
+> **Invocation:** `wiki fix-stale [--repo <path>] [--page <relpath>] [--no-auto-clear-flags] [--no-body-mentions]` via Bash. The unified `wiki` CLI ships with the `researchwiki` Python package (`pip install researchwiki`).
+
 Walk the researcher through unresolved stale refs and apply researcher-approved body edits. Closes the body / frontmatter decoupling gap with strict P3 compliance — the *one* skill that legitimately edits wiki page bodies.
 
 ## Principles inheritance

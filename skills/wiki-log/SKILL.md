@@ -1,15 +1,17 @@
 ---
 name: wiki-log
-description: Use this skill when the researcher wants to add a new entry to their research journal — an experiment result, a paper summary, a design decision, or a free-form observation. This is the most-used ResearchWiki skill, invoked multiple times per day. The skill is a *Python + LLM hybrid*: deterministic operations (template parsing, frontmatter assembly, atomic file writes, code-symbol lookup, bidirectional back-refs) run via the `wiki-log` CLI; the conversational interview, P8 speculation detection, identifier/noun-phrase extraction, and summary writing are the LLM's job. Trigger phrases include "기록할래", "실험 결과 정리해줘", "이 논문 읽었어", "디자인 결정 남겨줘", "wiki에 추가해", "log this", "add to wiki", "record the experiment", "file this paper reading", "log a decision". Do not use for regenerating the code index (use `wiki-sync`), running deep code analysis (use `wiki-deepscan`), auditing existing wiki content (use `wiki-lint`), initializing the workspace (use `wiki-init`), or editing the body of an existing wiki page (use `wiki-fix-stale` for stale-ref body edits, or refuse per `reference/refusal-patterns.md` §1).
+description: Use this skill when the researcher wants to add a new entry to their research journal — an experiment result, a paper summary, a design decision, or a free-form observation. This is the most-used ResearchWiki skill, invoked multiple times per day. The skill is a *Python + LLM hybrid*: deterministic operations (template parsing, frontmatter assembly, atomic file writes, code-symbol lookup, bidirectional back-refs) run via the `wiki log <subcommand>` CLI; the conversational interview, P8 speculation detection, identifier/noun-phrase extraction, and summary writing are the LLM's job. Trigger phrases include "기록할래", "실험 결과 정리해줘", "이 논문 읽었어", "디자인 결정 남겨줘", "wiki에 추가해", "log this", "add to wiki", "record the experiment", "file this paper reading", "log a decision". Do not use for regenerating the code index (use `wiki-sync`), running deep code analysis (use `wiki-deepscan`), auditing existing wiki content (use `wiki-lint`), initializing the workspace (use `wiki-init`), or editing the body of an existing wiki page (use `wiki-fix-stale` for stale-ref body edits, or refuse per `reference/refusal-patterns.md` §1).
 ---
 
 # wiki-log
+
+> **Invocation:** `wiki log {inspect | lookup-symbols | find-pages | find-amend-target | run} ...` via Bash. The unified `wiki` CLI ships with the `researchwiki` Python package (`pip install researchwiki`).
 
 Add a new entry to the research journal. The researcher's primary
 daily skill. **Ease of use is the design driver** — the conversation
 should feel fluid, not form-filling.
 
-The mechanical I/O is delegated to the `wiki-log` CLI subcommands. Your
+The mechanical I/O is delegated to the `wiki log` CLI subcommands. Your
 job — the LLM's job — is everything *between* CLI calls: interviewing
 the researcher, paraphrasing template guides into natural questions,
 detecting and routing P8 speculation markers, extracting identifier
@@ -46,15 +48,15 @@ Operates under P1–P8 (see `CLAUDE.md`).
 
 ## The CLI surface
 
-The `wiki-log` command exposes five subcommands. All emit JSON on
-stdout for easy LLM consumption.
+The `wiki log` subcommand exposes five sub-subcommands. All emit JSON
+on stdout for easy LLM consumption.
 
 ```
-wiki-log inspect           --type T --title X [--today YYYY-MM-DD] [--session-id ID] [--git-ref REF]
-wiki-log lookup-symbols    --tokens "t1,t2,..."         (or --tokens-file <path>)
-wiki-log find-pages        --kind K --ids "id1,id2,..." (or --ids-file <path>)
-wiki-log find-amend-target --type T [--window-hours 24]
-wiki-log run               --payload <json-file>        (or --payload - to read stdin)
+wiki log inspect           --type T --title X [--today YYYY-MM-DD] [--session-id ID] [--git-ref REF]
+wiki log lookup-symbols    --tokens "t1,t2,..."         (or --tokens-file <path>)
+wiki log find-pages        --kind K --ids "id1,id2,..." (or --ids-file <path>)
+wiki log find-amend-target --type T [--window-hours 24]
+wiki log run               --payload <json-file>        (or --payload - to read stdin)
 ```
 
 ### `inspect` — what the LLM uses to drive the conversation
@@ -128,7 +130,7 @@ creation, and questions.md append in one call. Refuses (`exit 2`) on:
 
 ## The payload schema
 
-JSON file (or piped stdin) handed to `wiki-log run`:
+JSON file (or piped stdin) handed to `wiki log run`:
 
 ```jsonc
 {
@@ -172,7 +174,7 @@ JSON file (or piped stdin) handed to `wiki-log run`:
    researcher's first message. If either is missing, ask one focused
    question per missing field. Don't chain.
 
-2. **`wiki-log inspect`.** Get the template + path + workspace state.
+2. **`wiki log inspect`.** Get the template + path + workspace state.
    - `collision: true` → invoke the collision flow
      (`reference/refusal-patterns.md` §5).
    - `signatures_available: false` → warn, disable code auto-link
@@ -196,8 +198,8 @@ JSON file (or piped stdin) handed to `wiki-log run`:
    `template_directives.auto_link.<kind>.enabled: true`:
    - Extract candidates from `section_answers` per
      `reference/auto-link-extraction.md`.
-   - Run `wiki-log lookup-symbols` (for `code`) or
-     `wiki-log find-pages` (for `experiments` / `concepts` / `papers`).
+   - Run `wiki log lookup-symbols` (for `code`) or
+     `wiki log find-pages` (for `experiments` / `concepts` / `papers`).
    - Build the candidate list; failed concept candidates → stub
      suggestion batch.
 
@@ -215,7 +217,7 @@ JSON file (or piped stdin) handed to `wiki-log run`:
    Set `authored_by: hybrid` (or `human` if researcher dictated
    verbatim). Write to a temp file (or stdin-pipe).
 
-9. **`wiki-log run --payload <file>`.** Atomic write. On success,
+9. **`wiki log run --payload <file>`.** Atomic write. On success,
    render the result concisely (`reference/conversational-style.md` §7).
    On failure (FileExistsError / ValueError), surface the message
    and route accordingly.
@@ -228,7 +230,7 @@ stub suggestion). Required-field validation, P8 enforcement, and
 
 ### Amend mode
 
-`--amend` replaces step 1's `inspect` with `wiki-log find-amend-target
+`--amend` replaces step 1's `inspect` with `wiki log find-amend-target
 --type T`. If null, run the expired-window flow
 (`reference/refusal-patterns.md` §6). Otherwise, show the body preview
 and ask what to change. Apply via direct `Edit` (file in place — this
@@ -287,12 +289,12 @@ Consult these whenever the conversation goes off the happy path:
   (it's part of auto-link).
 - **Concept stubs are create-only and body-empty.** Frontmatter +
   single italicized line. Carry `seeded_by: wiki-log` +
-  `seed_context:` for downstream skill recognition. `wiki-log run`
+  `seed_context:` for downstream skill recognition. `wiki log run`
   enforces this — you cannot accidentally write prose to a stub.
 
 ## Failure handling (essentials)
 
-- Target repo not initialized → `wiki-log inspect` raises
+- Target repo not initialized → `wiki log inspect` raises
   FileNotFoundError; abort and route to `wiki-init`.
 - Template missing → fall back to free_form, warn.
 - `index/signatures.json` absent → `inspect` reports

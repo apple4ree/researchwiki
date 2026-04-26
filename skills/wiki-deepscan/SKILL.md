@@ -5,6 +5,8 @@ description: Use this skill when the researcher wants to run Understand-Anything
 
 # wiki-deepscan
 
+> **Invocation:** `wiki deepscan [--repo <path>] [--from-graph <file>] [--scope <glob>] [--no-seed-wiki] [--no-incremental]` via Bash. The unified `wiki` CLI ships with the `researchwiki` Python package (`pip install researchwiki`).
+
 Run Understand-Anything and refresh the Deep Analysis Layer. Seed stub wiki pages for newly significant components. The weekend / milestone ritual — expensive, deliberate, worth doing at a cadence where its findings actually get acted on.
 
 ## Principles inheritance
