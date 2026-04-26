@@ -113,24 +113,114 @@ pip install -e .
 
 ## 구현된 것
 
-소스는 `src/researchwiki/` 아래에 있고, CLI 진입점은 `pip install -e .` 로 노출됩니다.
+소스는 `src/researchwiki/` 아래에 있고, CLI 진입점은 `pip install -e .` 로 노출됩니다. 168개 테스트 모두 통과 (159 unit + 9 integration).
+
+### 스킬 한눈에
+
+| 스킬 | 등급 | 호출 빈도 | 한 줄 요약 | 주요 산출물 |
+|---|---|---|---|---|
+| `wiki-init` | A | 1회 | 워크스페이스 부트스트랩 | `wiki/`, `index/`, `deep/`, `templates/`, `CLAUDE.md`, config |
+| `wiki-sync` | A | 매일 | 코드 인덱스 갱신 + stale ref 감지 | `index/signatures.json`, `index/reverse_refs.json`, snapshots, frontmatter 의 `stale: true` 플래그 |
+| `wiki-log` | **B** | 수시 | 새 엔트리 + 자동 링크 (LLM 인터뷰) | `wiki/<kind>/<slug>.md`, `log.md` append, `index.md` 갱신, 양방향 back-ref |
+| `wiki-deepscan` | A | 주간 | Understand-Anything 그래프 + concept stub seed | `deep/knowledge-graph.json`, `wiki/concepts/<slug>.md` stubs |
+| `wiki-lint` | A | on-demand | 8가지 mechanical 감사 | 감사 리포트, `wiki/questions.md`/`discrepancies.md` append |
+| `wiki-query` | A · read-only | on-demand | BM25 본문 자연어 검색 | stdout (ranked 경로 + 스니펫) |
+| `wiki-recall` | A · read-only | 주기적 | 최근 활동 대비 잊힌 페이지 surfacing | stdout (overlap 증거 포함) |
+| `wiki-fix-stale` | A | 유지보수 | stale ref 본문을 occurrence 단위 승인 후 정리 (P3 carve-out) | 위키 본문 편집, frontmatter 플래그 클리어 |
+
+> **Class A** = 순수 Python, LLM 추론 불필요. **Class B** = Python + LLM 하이브리드 — `wiki-log` 만 해당. 자세한 구분은 `ARCHITECTURE.md §3.5` 참조.
+
+### 스킬 간 데이터 흐름
+
+스킬은 직접 호출보다는 *서로의 산출물* 을 통해 협력합니다. 비자명한 의존만 표시 (모두가 `wiki/` 를 읽는 부분은 생략):
+
+```mermaid
+flowchart LR
+    src[("src/ 코드")]
+
+    sync([wiki-sync])
+    log([wiki-log])
+    deepscan([wiki-deepscan])
+    lint([wiki-lint])
+    query([wiki-query])
+    recall([wiki-recall])
+    fixstale([wiki-fix-stale])
+
+    sig["index/signatures.json"]
+    stale["frontmatter<br/>stale: true"]
+    logmd["wiki/log.md"]
+    seeded["wiki/concepts/*<br/>seeded_by 마커"]
+    bodies[("wiki 본문")]
+
+    src --> sync --> sig
+    sig -- "식별자 verified" --> log
+
+    sync -- "P3: frontmatter만 표시" --> stale --> fixstale
+    fixstale -- "occurrence별 승인" --> bodies
+
+    src --> deepscan --> seeded
+    seeded -- "grace period" --> lint
+
+    log --> logmd --> recall
+    log --> bodies
+
+    bodies --> query
+    bodies --> recall
+    bodies --> lint
+
+    classDef classA fill:#e8f0fe,stroke:#5a7
+    classDef classB fill:#fde8e8,stroke:#a55
+    classDef artifact fill:#f5f5f5,stroke:#888,stroke-dasharray: 3 3
+    class sync,deepscan,lint,query,recall,fixstale classA
+    class log classB
+    class sig,stale,logmd,seeded,bodies,src artifact
+```
+
+> `wiki-init` 은 위 모든 산출물 디렉토리 (`wiki/`, `index/`, `deep/`, `templates/`) 와 `CLAUDE.md` / config 를 처음 한 번 만들어주는 부트스트랩 단계로, 데이터 흐름이라기보다 *선행 조건* 이라 다이어그램에서는 생략했습니다.
+
+핵심 데이터 계약 4개:
+
+1. **`wiki-sync` → `wiki-log`**: log 가 `signatures.json` 을 lookup 해 식별자를 `verified` 로 표기. 인덱스에 없으면 `inferred` 또는 후보에서 drop.
+2. **`wiki-sync` → `wiki-fix-stale`**: sync 가 frontmatter 에 `stale: true` 만 붙이고 본문은 절대 건드리지 않음 (P3). fix-stale 이 그 플래그를 보고 연구자와 함께 본문을 정리.
+3. **`wiki-deepscan` → `wiki-lint`**: deepscan 이 자동 생성한 stub 에 `seeded_by:` 마커를 남기고, lint orphan check 가 이 마커를 보고 grace period 적용.
+4. **`wiki-log` → `wiki-recall`**: recall 이 최근 `log.md` 활동의 ref 와 오래된 페이지 frontmatter 를 교차해 잊힌 관련 페이지 surfacing.
+
+### 운영 사이클
+
+```
+최초 1회        ──►  wiki-init                              (워크스페이스 셋업)
+
+매일 아침       ──►  wiki-sync                              (코드 인덱스 + stale 감지)
+                       │
+하루 종일       ──►   └─►  wiki-log × N                     (실험 / 논문 / 결정 기록)
+
+주말·마일스톤   ──►  wiki-deepscan                          (지식 그래프 갱신)
+                     wiki-lint                              (감사)
+
+수시 (필요시)   ──►  wiki-query, wiki-recall, wiki-fix-stale
+```
+
+### 스킬별 상세
+
+<details>
+<summary>각 스킬의 동작 / 입출력 / CLI / 옵션 (펼치기)</summary>
 
 - **`wiki-init` v0.1** — 번들(`skills/wiki-init/reference/bundle/{CLAUDE.md, research-wiki.config.yaml, templates/<lang>/}`)을 대상 저장소로 복사하고, wiki/index/deep/raw/templates 디렉토리 골격을 만들어 ResearchWiki 워크스페이스로 부트스트랩합니다. `--language` 에 따라 `language.default` 만 후처리 치환하고, 그 외에는 byte-for-byte 그대로 복사합니다. 4개의 wiki 메타 파일(index/log/questions/discrepancies)을 생성하고, init 이벤트를 첫 log entry 로 append 합니다. Idempotent — 재실행 시 기존 파일은 skip 하고 새 init 로그만 추가합니다. `.gitignore` 에 `deep/knowledge-graph.json` 항목을 추가합니다 (idempotent). CLI: `wiki-init [target] --mode new --language ko -y`.
 - **`wiki-sync` v0.1** — Python (stdlib `ast`), JSON (top-level keys), Markdown (ATX 헤딩, frontmatter / code-fence 인지) 스캐너를 갖추고 있습니다. `index/signatures.json`, `index/reverse_refs.json`, 실행별 `index/snapshots/sync_*.md` 를 생성합니다. Stale-link pass 가 frontmatter 의 `stale: true` 를 표시하고 `wiki/questions.md` 에 append 합니다 (재실행 시 idempotent 이며 위키 본문은 절대 건드리지 않습니다). CLI: `wiki-sync --repo <path>`.
-- **`wiki-lint` v0.1** — 8개의 mechanical check 를 수행합니다: frontmatter 스키마, `authored_by` enum, intra-wiki 링크 존재(Obsidian-style root-relative 해석), `refs.code.path` 파일 존재, speculation 밀도(default 0.30 임계치), 지속 stale-ref 나이(default 7일), cross-page `confidence` 충돌, `seeded_by:` grace period(default 30일)를 가진 orphan 페이지. 메타 페이지는 frontmatter / speculation 검사에서 제외됩니다. 감사 리포트를 만들고 `wiki/questions.md` / `wiki/discrepancies.md` 에 append 합니다. release gating 용 `--strict` 플래그 제공. CLI: `wiki-lint --repo <path>`.
-- **`wiki-deepscan` v0.1** — 외부 지식 그래프 도구(주로 Understand-Anything)의 wrapper 입니다. 그래프를 로드(또는 바이너리를 호출)하고, inbound-edge 임계치로 architecturally significant 노드를 필터링한 뒤, wiki concept stub 을 seed 합니다(frontmatter 만 + 구조적 사실 + open-questions 템플릿 — LLM 이 prose 를 작성하는 일은 결코 없습니다). 같은 concept 의 기존 페이지에는 verified `refs.code` 를 append 하고, naming 충돌은 `wiki/questions.md` 로, graph-vs-frontmatter 불일치는 `wiki/discrepancies.md` 로 기록합니다. `deep/knowledge-graph.json`, `deep/last-scan.yaml`, 실행별 `deep/deepscan-report-*.md` 를 작성합니다. `--from-graph <path>` 로 미리 빌드된 그래프를 주입할 수 있습니다 (테스트 또는 비-UA 도구용). CLI: `wiki-deepscan --repo <path>`.
-- **`wiki-query` v0.1** — 위키 본문에 대한 BM25 lexical 검색입니다. 토크나이저는 식별자 구분자(snake / camel / kebab + 점 / 슬래시)로 분할하면서, 정확 경로 검색을 위해 통째 청크도 함께 보존하고, 한·영 혼용을 유지합니다. 스니펫과 함께 정렬된 페이지 경로를 stdout 으로 출력합니다. 미해결 `stale: true` 플래그가 있는 페이지에는 `⚠ stale: …` 배지가 prefix 로 붙습니다. 메타 페이지는 기본 제외이며 `--include-meta` 로 포함시킵니다. `--scope`, `--top`, `--frontmatter-only`, `--no-stale-warnings` 플래그를 제공하고, 외부 의존성 없이 stdlib 만 사용합니다. CLI: `wiki-query "rotary attention" --repo <path>`.
-- **`wiki-recall` v0.1** — 최근 `wiki/log.md` 활동의 ref 와 stale 페이지 frontmatter 의 교집합을 통해 stale-but-relevant 페이지를 surfacing 합니다. 스킬 메타 entry(`from wiki-sync`, `from wiki-lint`, `from wiki-deepscan`)는 헤더 패턴으로 필터링됩니다. 기본 ref 가중치는 code=2.0, concepts=1.5, papers=1.0, experiments=1.0 입니다. `seeded_by:` 또는 `authored_by: llm` 인 빈-본문 stub 은 기본적으로 제외되며 `--include-stubs` 로 포함합니다. `--lookback`, `--stale-since`, `--scope`, `--top` 플래그를 제공합니다. CLI: `wiki-recall --repo <path>`.
 - **`wiki-sync` v0.2** — v0.1 위에 세 가지가 추가됐습니다:
   - `--scan-body` body link rot (opt-in 휴리스틱). 위키 본문을 multi-cap-PascalCase + dotted + paren-suffix 정규식으로 토큰화하여 (`Use` / `Set` 같은 영어 false positive 회피), 인덱스에 없는 토큰을 frontmatter 의 `body_stale_mentions: [{line, token, detected}]` 에 기록합니다. 암묵적으로 `[unverified]` 입니다.
   - **Rename 휴리스틱.** 심볼 diff 후 동일 path + 라인 근접성 + `difflib` signature 유사도(default 0.80)로 removed × added 심볼을 페어링합니다. 결과는 snapshot 의 `## Possible renames (heuristic, [unverified])` 섹션에 출력됩니다. `sync.rename_heuristic.{enabled, similarity_threshold, line_window}` 로 설정합니다.
   - **End-of-run nag.** `sync.nag_after_days`(default 7) 보다 오래된 미해결 `stale: true` 플래그가 있을 때 `⚠ stale 플래그 N개, X일 이상 미해결. wiki-fix-stale로 처리하시겠어요?` 를 출력합니다. `--no-nag` 로 억제할 수 있습니다.
-- **`wiki-fix-stale` v0.1** — 위키 본문을 합법적으로 편집하는 *유일한* P3-carve-out 스킬입니다. 연구자 주도 호출 + occurrence 단위 승인 + 4가지 mechanical 변환(연구자가 제공한 식별자로 심볼 교체 / `[deprecated YYYY-MM-DD]` 태그로 감싸기 / 라인 삭제 / skip)만 수행합니다. 페이지의 모든 occurrence 가 처리되면 `stale: true` 플래그와 `body_stale_mentions:` 항목이 frontmatter 에서 자동으로 클리어됩니다. frontmatter 의 `refs.code` stale 플래그와 `wiki-sync --scan-body` 가 남긴 `body_stale_mentions:` 모두를 순회합니다. 세션 기록은 `wiki/log.md` 에 append 됩니다. 페이지 단위 atomic 으로 동작하며, 페이지 중간에 abort 하면 in-memory 편집은 폐기됩니다. 테스트 가능성을 위해 `prompt_fn` / `display_fn` 의존성 주입을 지원합니다. CLI: `wiki-fix-stale --repo <path>`.
 - **`wiki-log` v0.1 (Python + LLM 하이브리드)** — *유일한* LLM 필수 스킬입니다. Mechanical core(`src/researchwiki/log.py` + 5개 CLI 서브커맨드 `inspect`, `lookup-symbols`, `find-pages`, `find-amend-target`, `run`)가 템플릿 파싱(HTML 주석 처리, `{{PLACEHOLDER}}` 인용), `index/signatures.json` 조회, exact-slug 페이지 조회, 그리고 entry + log.md append + index.md 갱신 + 양방향 back-ref + concept stub 생성 + questions.md append 의 atomic write 를 담당합니다. 대화형 인터뷰(이탤릭 가이드 paraphrase, P8 감지와 3-route 흐름, identifier / 명사구 추출, 요약 작성)는 LLM 의 몫이며, `skills/wiki-log/reference/` 의 9개 reference 문서(특히 `p8-detection.md`, `conversational-style.md`, `auto-link-extraction.md`, `refusal-patterns.md`, `templates-deep-dive.md`)가 가이드 역할을 합니다. `authored_by: llm` 은 validator 가 거부합니다 — 모든 entry 는 사람의 의도를 요구합니다. CLI: `wiki-log {inspect | lookup-symbols | find-pages | find-amend-target | run} ...`.
+- **`wiki-deepscan` v0.1** — 외부 지식 그래프 도구(주로 Understand-Anything)의 wrapper 입니다. 그래프를 로드(또는 바이너리를 호출)하고, inbound-edge 임계치로 architecturally significant 노드를 필터링한 뒤, wiki concept stub 을 seed 합니다(frontmatter 만 + 구조적 사실 + open-questions 템플릿 — LLM 이 prose 를 작성하는 일은 결코 없습니다). 같은 concept 의 기존 페이지에는 verified `refs.code` 를 append 하고, naming 충돌은 `wiki/questions.md` 로, graph-vs-frontmatter 불일치는 `wiki/discrepancies.md` 로 기록합니다. `deep/knowledge-graph.json`, `deep/last-scan.yaml`, 실행별 `deep/deepscan-report-*.md` 를 작성합니다. `--from-graph <path>` 로 미리 빌드된 그래프를 주입할 수 있습니다 (테스트 또는 비-UA 도구용). CLI: `wiki-deepscan --repo <path>`.
+- **`wiki-lint` v0.1** — 8개의 mechanical check 를 수행합니다: frontmatter 스키마, `authored_by` enum, intra-wiki 링크 존재(Obsidian-style root-relative 해석), `refs.code.path` 파일 존재, speculation 밀도(default 0.30 임계치), 지속 stale-ref 나이(default 7일), cross-page `confidence` 충돌, `seeded_by:` grace period(default 30일)를 가진 orphan 페이지. 메타 페이지는 frontmatter / speculation 검사에서 제외됩니다. 감사 리포트를 만들고 `wiki/questions.md` / `wiki/discrepancies.md` 에 append 합니다. release gating 용 `--strict` 플래그 제공. CLI: `wiki-lint --repo <path>`.
+- **`wiki-query` v0.1** — 위키 본문에 대한 BM25 lexical 검색입니다. 토크나이저는 식별자 구분자(snake / camel / kebab + 점 / 슬래시)로 분할하면서, 정확 경로 검색을 위해 통째 청크도 함께 보존하고, 한·영 혼용을 유지합니다. 스니펫과 함께 정렬된 페이지 경로를 stdout 으로 출력합니다. 미해결 `stale: true` 플래그가 있는 페이지에는 `⚠ stale: …` 배지가 prefix 로 붙습니다. 메타 페이지는 기본 제외이며 `--include-meta` 로 포함시킵니다. `--scope`, `--top`, `--frontmatter-only`, `--no-stale-warnings` 플래그를 제공하고, 외부 의존성 없이 stdlib 만 사용합니다. CLI: `wiki-query "rotary attention" --repo <path>`.
+- **`wiki-recall` v0.1** — 최근 `wiki/log.md` 활동의 ref 와 stale 페이지 frontmatter 의 교집합을 통해 stale-but-relevant 페이지를 surfacing 합니다. 스킬 메타 entry(`from wiki-sync`, `from wiki-lint`, `from wiki-deepscan`)는 헤더 패턴으로 필터링됩니다. 기본 ref 가중치는 code=2.0, concepts=1.5, papers=1.0, experiments=1.0 입니다. `seeded_by:` 또는 `authored_by: llm` 인 빈-본문 stub 은 기본적으로 제외되며 `--include-stubs` 로 포함합니다. `--lookback`, `--stale-since`, `--scope`, `--top` 플래그를 제공합니다. CLI: `wiki-recall --repo <path>`.
+- **`wiki-fix-stale` v0.1** — 위키 본문을 합법적으로 편집하는 *유일한* P3-carve-out 스킬입니다. 연구자 주도 호출 + occurrence 단위 승인 + 4가지 mechanical 변환(연구자가 제공한 식별자로 심볼 교체 / `[deprecated YYYY-MM-DD]` 태그로 감싸기 / 라인 삭제 / skip)만 수행합니다. 페이지의 모든 occurrence 가 처리되면 `stale: true` 플래그와 `body_stale_mentions:` 항목이 frontmatter 에서 자동으로 클리어됩니다. frontmatter 의 `refs.code` stale 플래그와 `wiki-sync --scan-body` 가 남긴 `body_stale_mentions:` 모두를 순회합니다. 세션 기록은 `wiki/log.md` 에 append 됩니다. 페이지 단위 atomic 으로 동작하며, 페이지 중간에 abort 하면 in-memory 편집은 폐기됩니다. 테스트 가능성을 위해 `prompt_fn` / `display_fn` 의존성 주입을 지원합니다. CLI: `wiki-fix-stale --repo <path>`.
 - **`docs/CONFIG.md`** 와 **`docs/TEMPLATES.md`** — 사용자용 reference 문서입니다. 스킬별 `consumed-config.md` 와 wiki-log 템플릿 포맷을 모은 통합본입니다.
 - **Integration 테스트** — `tests/integration/` 아래에 있으며, `wiki-init` 으로 부트스트랩한 임시 디렉토리 fixture 위에서 cross-skill 데이터 흐름을 검증합니다. 5개의 end-to-end 시나리오(refactor remediation, weekly audit + query + recall, deepscan stub × lint orphan grace, body link rot round trip, wiki-log 전체 CLI 흐름)와 2개의 pairwise 계약(recall 이 스킬 메타 로그 entry 를 필터링하는지, fix-stale 이 lint 가 보고하는 동일 finding 을 클리어하는지)을 다룹니다.
 
-168개 테스트 모두 통과합니다 (159 unit + 9 integration).
+</details>
 
 ## 아직 안 된 것
 
