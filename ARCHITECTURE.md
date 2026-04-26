@@ -521,3 +521,20 @@ Subsequent invocations are essentially free: the import check is microseconds, t
 - **Opt-out via `WIKI_NO_BOOTSTRAP=1`.** Useful in CI / container builds where the package is preinstalled and the wrapper should be a pure passthrough.
 
 **Outcome.** End-user setup story is now exactly two slash commands inside Claude Code, plus an existing Python installation — no separate terminal step. Verified locally: clean venv (no researchwiki) → run via `bin/wiki --help` → wrapper detects missing package → falls back from PyPI to GitHub source → installs → dispatches help text. Subsequent `bin/wiki init /tmp/foo -y` ran in 344 ms (no reinstall) and produced the full workspace correctly.
+
+### [2026-04-26] Drop PyPI from the install path; distribute via Git only
+
+Simplified the bootstrap by removing the PyPI try-first / GitHub fallback layering. The wrapper now installs unconditionally from `git+https://github.com/apple4ree/researchwiki.git`. Rationale:
+
+- **PyPI is not actually published yet.** Every first-time install was paying the cost of a doomed PyPI request before falling back to git. Removing that path is a strict improvement during the pre-publish window — and we now have no reason to leave the pre-publish window.
+- **PyPI publication has costs that don't pay off here.** A real license must be chosen and committed (currently `text = "TBD"`). A PyPI account and API token must be set up. Each release needs a version bump + `twine upload`. None of those produce value beyond a slightly nicer `pip install researchwiki` line. The bootstrap wrapper masks that line entirely (the user types `/plugin install ...`, not `pip install ...`), so the savings are invisible.
+- **Git-as-distribution-channel is the simplest possible release model.** `git push origin main` *is* the release. No build artifacts, no upload step, no version-skew between PyPI / git tag / plugin.json.
+
+Two new env vars in the wrapper:
+
+- `WIKI_NO_BOOTSTRAP=1` — skip the install check entirely. For CI / containers where the package is preinstalled. (Already present from the previous change.)
+- `WIKI_UPGRADE=1` — force `pip install --upgrade` from the latest `main`. Lets advanced users opt into "give me the newest" without rebuilding the venv.
+
+`docs/RELEASE.md` was rewritten to document the Git-only model and to keep the PyPI publication path as a (clearly labeled) future option, not the current canonical procedure. PyPI metadata in `pyproject.toml` (classifiers, urls, longer description) is preserved — it's harmless and would still apply if a future maintainer chose to publish.
+
+**Trade-off accepted: GitHub availability dependency.** The bootstrap can't install offline. For a research-tool target audience using Claude Code (which itself requires connectivity), that is not a practical limitation. Users on locked-down networks who need offline install can: clone once → `pip install -e .` → set `WIKI_NO_BOOTSTRAP=1` going forward.

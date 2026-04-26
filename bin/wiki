@@ -8,15 +8,17 @@
 # bypassing PATH dependence on `~/.local/bin` after a `pip install --user`.
 #
 # Behavior on first invocation:
-#   1. Find a python3 interpreter.
+#   1. Find a python3 interpreter (≥ 3.10).
 #   2. Check whether `researchwiki` is importable.
-#   3. If missing, run `pip install --user researchwiki` (PyPI) with
-#      a fallback to installing from the GitHub source.
+#   3. If missing, install from the canonical GitHub source via pip.
+#      (We skip PyPI deliberately — the project distributes via Git only;
+#      no PyPI publication required.)
 #   4. Dispatch.
 #
 # Subsequent invocations are zero-cost: the import check is microseconds.
 # To skip the bootstrap entirely (e.g., in CI where you've already
 # installed the package globally), set WIKI_NO_BOOTSTRAP=1.
+# To force a re-install from the latest commit, set WIKI_UPGRADE=1.
 
 set -euo pipefail
 
@@ -43,10 +45,23 @@ fi
 
 # ---- ensure researchwiki is importable --------------------------------------
 
-if [ "${WIKI_NO_BOOTSTRAP:-0}" != "1" ] && \
-   ! "$PY" -c "import researchwiki" >/dev/null 2>&1; then
+RW_GIT_URL="git+https://github.com/apple4ree/researchwiki.git"
 
-  echo "[wiki] First-time setup: installing the researchwiki Python package…" >&2
+needs_install=0
+if [ "${WIKI_NO_BOOTSTRAP:-0}" = "1" ]; then
+  needs_install=0
+elif [ "${WIKI_UPGRADE:-0}" = "1" ]; then
+  needs_install=1
+elif ! "$PY" -c "import researchwiki" >/dev/null 2>&1; then
+  needs_install=1
+fi
+
+if [ "$needs_install" -eq 1 ]; then
+  if [ "${WIKI_UPGRADE:-0}" = "1" ]; then
+    echo "[wiki] Upgrading researchwiki from GitHub source…" >&2
+  else
+    echo "[wiki] First-time setup: installing researchwiki from GitHub source…" >&2
+  fi
 
   # Decide the install target. In a venv pip refuses --user; outside a
   # venv (system / user Python) --user is the safer default since it
@@ -58,34 +73,22 @@ if [ "${WIKI_NO_BOOTSTRAP:-0}" != "1" ] && \
   if [ "$in_venv" -eq 0 ] && [ -z "${VIRTUAL_ENV:-}" ]; then
     PIP_FLAGS="$PIP_FLAGS --user"
   fi
-
-  install_ok=0
-
-  # Try PyPI first.
-  if "$PY" -m pip install $PIP_FLAGS researchwiki >/dev/null 2>&1; then
-    install_ok=1
-  else
-    # Fallback to GitHub source (covers the pre-PyPI-publish window
-    # and also works offline-mirror-friendly setups via VCS proxies).
-    echo "[wiki] PyPI install unavailable; falling back to GitHub source…" >&2
-    if "$PY" -m pip install $PIP_FLAGS \
-         "git+https://github.com/apple4ree/researchwiki.git" >/dev/null 2>&1; then
-      install_ok=1
-    fi
+  if [ "${WIKI_UPGRADE:-0}" = "1" ]; then
+    PIP_FLAGS="$PIP_FLAGS --upgrade"
   fi
 
-  if [ "$install_ok" -ne 1 ]; then
+  if ! "$PY" -m pip install $PIP_FLAGS "$RW_GIT_URL" >/dev/null 2>&1; then
     cat >&2 <<EOF
 [wiki] error: pip install failed. Try manually:
 
-       $PY -m pip install --user researchwiki
+       $PY -m pip install --user $RW_GIT_URL
 
 If that still fails (e.g., PEP 668 / externally managed environment),
-install via pipx or a venv:
+install via pipx or a dedicated venv:
 
-       pipx install researchwiki
+       pipx install $RW_GIT_URL
    or  python3 -m venv ~/.venvs/wiki && \\
-       ~/.venvs/wiki/bin/pip install researchwiki && \\
+       ~/.venvs/wiki/bin/pip install $RW_GIT_URL && \\
        export PATH="\$HOME/.venvs/wiki/bin:\$PATH"
 EOF
     exit 1
