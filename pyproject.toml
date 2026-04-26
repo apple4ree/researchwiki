@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "researchwiki"
+version = "0.1.0"
+description = "ResearchWiki — living research journal with mechanical fact extraction (P1/P3/P7/P8)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "TBD" }
+authors = [{ name = "ResearchWiki contributors" }]
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+wiki-init = "researchwiki.cli:init_main"
+wiki-log = "researchwiki.cli:log_main"
+wiki-sync = "researchwiki.cli:sync_main"
+wiki-lint = "researchwiki.cli:lint_main"
+wiki-deepscan = "researchwiki.cli:deepscan_main"
+wiki-query = "researchwiki.cli:query_main"
+wiki-recall = "researchwiki.cli:recall_main"
+wiki-fix-stale = "researchwiki.cli:fix_stale_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
