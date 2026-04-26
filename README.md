@@ -98,12 +98,23 @@ claude --plugin-dir .       # (2) Claude Code 가 이 저장소를 plugin으로 
 
 > Class A 7개는 순수 Python, `wiki-log` 만 Python + LLM 하이브리드입니다 — 자세한 구분은 `ARCHITECTURE.md §3.5` 참조.
 
-**`/plugin install researchwiki@<marketplace>` 경유는 아직 지원하지 않습니다.** 이 저장소는 plugin 정의(`.claude-plugin/plugin.json`)만 가지고 있고, marketplace 매니페스트(`.claude-plugin/marketplace.json`)는 아직 발행하지 않았기 때문입니다. 향후 두 갈래 중 하나로 활성화 가능:
+**대안 — self-hosted marketplace 경유.** Claude Code 의 plugin 등록을 marketplace 메커니즘으로 하고 싶다면(`--plugin-dir` 대신):
 
-- **(i) Anthropic 공식 marketplace 제출** ([platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)). 승인 시 모든 사용자가 `/plugin install researchwiki@<official-marketplace>` 로 접근. 광범위 배포에 적합하지만 검토 시간 소요.
-- **(ii) Self-hosted marketplace 추가.** 이 저장소(혹은 별도 큐레이션 저장소)에 `.claude-plugin/marketplace.json` 추가 → 사용자가 `/plugin marketplace add apple4ree/researchwiki` 후 `/plugin install researchwiki@<marketplace-name>` 로 설치. 빠르고 통제권 유지.
+```bash
+pip install git+https://github.com/apple4ree/researchwiki.git    # CLI 명령은 여전히 필요
+```
 
-당분간은 위의 `--plugin-dir` 경로를 사용해 주세요.
+Claude Code 안에서:
+
+```
+/plugin marketplace add apple4ree/researchwiki
+/plugin install researchwiki@researchwiki-plugins
+/plugin marketplace list                 # 등록 확인용 (선택)
+```
+
+`researchwiki-plugins` 는 marketplace 이름입니다 (`.claude-plugin/marketplace.json` 의 `name` 필드). 이 저장소는 plugin 정의(`plugin.json`) 와 marketplace 매니페스트(`marketplace.json`) 를 함께 호스팅 — 즉 single-plugin marketplace 로 동작합니다. 추후 plugin 이 늘어나면 같은 `marketplace.json` 의 `plugins` 배열에 entry 만 추가하면 됩니다.
+
+> 향후 [Anthropic 공식 marketplace](https://platform.claude.com/plugins/submit) 에 제출되어 승인되면 `/plugin install researchwiki@<official-marketplace>` 한 줄로 끝나는 경로도 열립니다. 현재는 self-hosted 경로만 지원합니다.
 
 **Bundle 경로 해석.** `wiki-init` 은 init 시점에 대상 저장소로 그대로 복사되는 런타임 자산 번들(`skills/wiki-init/reference/bundle/`)을 함께 배포합니다. 경로 탐색기(`src/researchwiki/init.py:_find_bundle`)는 환경 변수 오버라이드(`RESEARCHWIKI_BUNDLE`, `CLAUDE_PLUGIN_ROOT`)를 먼저 시도하고, 없으면 source-relative 경로로 fallback 합니다. editable install (`pip install -e .`) 과 Claude Code 매니지드 플러그인 설치 둘 다 추가 설정 없이 동작합니다.
 

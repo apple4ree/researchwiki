@@ -1,0 +1,24 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "researchwiki-plugins",
+  "description": "ResearchWiki plugin distribution — living research journal with mechanical fact extraction (P3/P8 enforced).",
+  "owner": {
+    "name": "ResearchWiki contributors",
+    "email": "jeongdamilab@gmail.com"
+  },
+  "version": "0.1.0",
+  "plugins": [
+    {
+      "name": "researchwiki",
+      "description": "Eight skills (init, log, sync, deepscan, lint, query, recall, fix-stale) maintaining a wiki layer (interpretation), an index layer (facts), and an optional deep layer (knowledge graph) alongside research code.",
+      "version": "0.1.0",
+      "source": ".",
+      "category": "development",
+      "author": {
+        "name": "ResearchWiki contributors",
+        "email": "jeongdamilab@gmail.com"
+      },
+      "homepage": "https://github.com/apple4ree/researchwiki"
+    }
+  ]
+}
