@@ -499,3 +499,25 @@ A new test (`tests/test_bundle_sync.py`) enforces byte-identity between the cano
 **Trade-off accepted: bundle duplication.** Two byte-identical copies of the same files is a maintenance burden; a build hook that copies during `python -m build` would be more elegant. We deferred that to v0.2 because (a) the bundle is small (10 files), (b) `tests/test_bundle_sync.py` mechanically catches drift on every test run, and (c) the test failure message tells the maintainer exactly which `cp -r` command resyncs them.
 
 **Outcome.** `pip install researchwiki` followed by `wiki init`, `wiki sync`, `wiki log run --payload ...` etc. now works in any Python ≥3.10 environment without requiring a source clone. Smoke-tested locally: clean venv → wheel install → `wiki init /tmp/foo -y` produces the full workspace correctly (bundle resolved via packaged fallback). 170 tests passing (158 unit + 9 integration + 2 bundle-sync).
+
+### [2026-04-26] `bin/wiki` self-bootstrap wrapper — eliminates manual `pip install`
+
+The previous step left a friction point: even with the unified `wiki` CLI and PyPI-ready packaging, the user *still* had to run `pip install researchwiki` separately before the slash commands worked. That extra step is now eliminated by a shell wrapper at the plugin's `bin/wiki`.
+
+Claude Code automatically adds an active plugin's `bin/` directory to the Bash sandbox PATH. We exploit this to ship a 100-line wrapper that:
+
+1. Locates a Python ≥ 3.10 interpreter on PATH.
+2. Checks whether `researchwiki` is importable.
+3. If not, runs `pip install researchwiki` (PyPI), with a fallback to the GitHub source for the pre-publish window. Detects whether we're in a venv (drop `--user`) vs system Python (keep `--user`) automatically.
+4. Re-checks; on success, dispatches via `python -m researchwiki`. The `python -m` form bypasses any PATH dependency on `~/.local/bin` after a `--user` install — important because `~/.local/bin` is not on PATH on macOS by default and inconsistently on Linux.
+
+Subsequent invocations are essentially free: the import check is microseconds, total wrapper overhead ~300ms (mostly Python startup, which `python -m researchwiki` would pay anyway).
+
+**Trade-offs accepted:**
+
+- **Bash-only.** The wrapper is a Bash script, so Windows users without WSL would not benefit — they would need to fall back to manual `pip install` plus `python -m researchwiki ...`. Acceptable because Claude Code itself is primarily macOS/Linux for now; if Windows-native support becomes important, a `.cmd` shim alongside the Bash wrapper is straightforward.
+- **PEP 668 environments need pipx.** Python distributions that ship with `EXTERNALLY-MANAGED` markers (Debian 12+, Homebrew on macOS, recent Ubuntu) refuse `pip install --user` without `--break-system-packages`. The wrapper detects this failure path and prints a clear message recommending `pipx install researchwiki` rather than silently using the breakage flag. Users on those distros get one more step (install pipx once), but the alternative — silently breaking the system Python — was worse.
+- **Bootstrap silent on success but visible on first run.** The wrapper prints two lines to stderr on the install path (`First-time setup: …`, `Setup complete. Continuing…`) and is silent on subsequent calls. Verbose enough to explain the ~30s pip-install pause, quiet enough to not pollute slash-command output afterwards.
+- **Opt-out via `WIKI_NO_BOOTSTRAP=1`.** Useful in CI / container builds where the package is preinstalled and the wrapper should be a pure passthrough.
+
+**Outcome.** End-user setup story is now exactly two slash commands inside Claude Code, plus an existing Python installation — no separate terminal step. Verified locally: clean venv (no researchwiki) → run via `bin/wiki --help` → wrapper detects missing package → falls back from PyPI to GitHub source → installs → dispatches help text. Subsequent `bin/wiki init /tmp/foo -y` ran in 344 ms (no reinstall) and produced the full workspace correctly.

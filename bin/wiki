@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# wiki — unified CLI bootstrapper for the ResearchWiki Claude Code plugin.
+#
+# When invoked through Claude Code's plugin sandbox, this script lives at
+# <plugin-root>/bin/wiki and is automatically on PATH whenever the plugin
+# is active. It ensures the underlying Python package (`researchwiki`)
+# is installed, then dispatches to it via `python -m researchwiki`,
+# bypassing PATH dependence on `~/.local/bin` after a `pip install --user`.
+#
+# Behavior on first invocation:
+#   1. Find a python3 interpreter.
+#   2. Check whether `researchwiki` is importable.
+#   3. If missing, run `pip install --user researchwiki` (PyPI) with
+#      a fallback to installing from the GitHub source.
+#   4. Dispatch.
+#
+# Subsequent invocations are zero-cost: the import check is microseconds.
+# To skip the bootstrap entirely (e.g., in CI where you've already
+# installed the package globally), set WIKI_NO_BOOTSTRAP=1.
+
+set -euo pipefail
+
+# ---- find python3 -----------------------------------------------------------
+
+PY=""
+for cand in python3 python; do
+  if command -v "$cand" >/dev/null 2>&1; then
+    # accept only Python ≥ 3.10
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+      PY="$cand"
+      break
+    fi
+  fi
+done
+
+if [ -z "$PY" ]; then
+  cat >&2 <<'EOF'
+[wiki] error: no Python ≥ 3.10 found on PATH.
+[wiki] ResearchWiki requires Python 3.10 or newer. Install Python first, then re-run.
+EOF
+  exit 127
+fi
+
+# ---- ensure researchwiki is importable --------------------------------------
+
+if [ "${WIKI_NO_BOOTSTRAP:-0}" != "1" ] && \
+   ! "$PY" -c "import researchwiki" >/dev/null 2>&1; then
+
+  echo "[wiki] First-time setup: installing the researchwiki Python package…" >&2
+
+  # Decide the install target. In a venv pip refuses --user; outside a
+  # venv (system / user Python) --user is the safer default since it
+  # doesn't require sudo and bypasses PEP 668 in many setups.
+  in_venv=$(
+    "$PY" -c 'import sys; print(1 if sys.prefix != getattr(sys, "base_prefix", sys.prefix) else 0)'
+  )
+  PIP_FLAGS="--quiet --disable-pip-version-check"
+  if [ "$in_venv" -eq 0 ] && [ -z "${VIRTUAL_ENV:-}" ]; then
+    PIP_FLAGS="$PIP_FLAGS --user"
+  fi
+
+  install_ok=0
+
+  # Try PyPI first.
+  if "$PY" -m pip install $PIP_FLAGS researchwiki >/dev/null 2>&1; then
+    install_ok=1
+  else
+    # Fallback to GitHub source (covers the pre-PyPI-publish window
+    # and also works offline-mirror-friendly setups via VCS proxies).
+    echo "[wiki] PyPI install unavailable; falling back to GitHub source…" >&2
+    if "$PY" -m pip install $PIP_FLAGS \
+         "git+https://github.com/apple4ree/researchwiki.git" >/dev/null 2>&1; then
+      install_ok=1
+    fi
+  fi
+
+  if [ "$install_ok" -ne 1 ]; then
+    cat >&2 <<EOF
+[wiki] error: pip install failed. Try manually:
+
+       $PY -m pip install --user researchwiki
+
+If that still fails (e.g., PEP 668 / externally managed environment),
+install via pipx or a venv:
+
+       pipx install researchwiki
+   or  python3 -m venv ~/.venvs/wiki && \\
+       ~/.venvs/wiki/bin/pip install researchwiki && \\
+       export PATH="\$HOME/.venvs/wiki/bin:\$PATH"
+EOF
+    exit 1
+  fi
+
+  # Sanity re-check.
+  if ! "$PY" -c "import researchwiki" >/dev/null 2>&1; then
+    echo "[wiki] error: install reported success but researchwiki still not importable." >&2
+    echo "[wiki] (This usually means --user site is not on \$PYTHONPATH for $PY.)" >&2
+    exit 1
+  fi
+
+  echo "[wiki] Setup complete. Continuing…" >&2
+fi
+
+# ---- dispatch ---------------------------------------------------------------
+
+exec "$PY" -m researchwiki "$@"
