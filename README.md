@@ -1,64 +1,64 @@
 # ResearchWiki
 
-> A skill set for LLM coding agents that maintains a **living research journal** — structured, cross-linked, honest — while you do the research.
+> 연구를 진행하는 동안 **살아있는 연구 저널** — 구조화되고, 교차 링크되어 있고, 정직한 — 을 함께 유지해주는 LLM 코딩 에이전트용 스킬 셋.
 
-A vertical application of the [Codified Context](https://arxiv.org/abs/2602.20478) framework to the research domain.
+[Codified Context](https://arxiv.org/abs/2602.20478) 프레임워크를 연구 도메인에 수직 적용한 결과물.
 
-## Status
+## 상태
 
-**Draft v0.3 — five MVP + two retrieval + one remediation skill, all specs and implementations drafted.**
+**Draft v0.3 — 5개 MVP + 2개 retrieval + 1개 remediation 스킬, 모든 spec과 구현이 완료됨.**
 
-This repository contains the architecture specification, per-skill design documents (`SPEC.md`), `SKILL.md` documents, and Python implementations for all 8 skills: five MVP skills (`wiki-init`, `wiki-log`, `wiki-sync`, `wiki-deepscan`, `wiki-lint`), two retrieval extensions (`wiki-query`, `wiki-recall`), and one remediation skill (`wiki-fix-stale`) that closes the body / frontmatter decoupling gap with strict P3 compliance. `wiki-log` is the only Python + LLM hybrid (the conversational interview + P8 detection require LLM reasoning); the other 7 skills are pure code. Other-language `wiki-sync` scanners and release packaging are still pending — see "Not yet done" below.
+이 저장소는 8개 스킬 전부에 대한 아키텍처 명세, 스킬별 설계 문서(`SPEC.md`), `SKILL.md` 문서, Python 구현을 포함합니다: 5개 MVP 스킬(`wiki-init`, `wiki-log`, `wiki-sync`, `wiki-deepscan`, `wiki-lint`), 2개 retrieval 확장(`wiki-query`, `wiki-recall`), 그리고 body / frontmatter 디커플링 갭을 엄격한 P3 준수 하에 닫는 1개 remediation 스킬(`wiki-fix-stale`). `wiki-log` 만 Python + LLM 하이브리드 (대화형 인터뷰와 P8 감지가 LLM 추론을 요구하기 때문) 이고, 나머지 7개는 순수 코드입니다. 다른 언어 `wiki-sync` 스캐너와 release packaging은 아직 미구현 — 아래 "아직 안 된 것" 참조.
 
-## What problem this solves
+## 어떤 문제를 해결하나
 
-Researchers accumulate knowledge in three forms at once: code they write, papers they read, and experiments they run. The connections between them — which code implements which paper's idea, which experiment tested which hypothesis, which design decision resolved which contradiction — are where the real understanding lives. These connections are rarely captured. They live in the researcher's head, get forgotten, and have to be rediscovered.
+연구자는 동시에 세 형태의 지식을 쌓아갑니다: 작성하는 코드, 읽는 논문, 돌리는 실험. 그 사이의 연결 — 어느 코드가 어느 논문의 아이디어를 구현했는지, 어느 실험이 어느 가설을 검증했는지, 어느 디자인 결정이 어느 모순을 해소했는지 — 에 진짜 이해가 산다. 이 연결은 잘 기록되지 않습니다. 연구자의 머릿속에 있다가 잊혀지고, 다시 발견해야 합니다.
 
-Existing tools address at most one of these. Zotero handles papers. MLflow handles experiments. Understand-Anything handles code. None of them handle the *crossings*.
+기존 도구는 이 셋 중 하나만 다룹니다. Zotero는 논문, MLflow는 실험, Understand-Anything은 코드. 그 어느 것도 *교차점* 을 다루지 않습니다.
 
-ResearchWiki is the glue layer. An LLM agent with this skill set maintains a markdown wiki that links across all three, updates as the research evolves, and refuses to speculate.
+ResearchWiki는 그 접합 레이어입니다. 이 스킬 셋을 가진 LLM 에이전트가 셋 모두를 가로질러 링크하는 마크다운 위키를 유지하고, 연구가 진화함에 따라 갱신하며, **추측하기를 거부합니다.**
 
-## How it works
+## 작동 방식
 
-Three cooperating layers inside a `wiki/` directory:
+`wiki/` 디렉토리 내에 협력하는 세 레이어:
 
-- **Wiki Layer** — the researcher's interpretations, decisions, paper summaries (daily updates, human-authored with LLM help)
-- **Index Layer** — a lightweight factual snapshot of the current codebase (regenerated on demand)
-- **Deep Analysis Layer** — optional rich code knowledge graph via [Understand-Anything](https://github.com/Lum1104/Understand-Anything) (regenerated weekly or at milestones)
+- **Wiki Layer** — 연구자의 해석, 결정, 논문 요약 (매일 업데이트, 사람이 작성하고 LLM이 보조)
+- **Index Layer** — 현재 코드베이스의 가벼운 사실 스냅샷 (필요 시 재생성)
+- **Deep Analysis Layer** — [Understand-Anything](https://github.com/Lum1104/Understand-Anything) 통한 선택적인 풍부한 코드 지식 그래프 (주간/마일스톤 단위 재생성)
 
-Eight skills — five MVP, two read-only retrieval extensions, one remediation skill:
+8개 스킬 — 5개 MVP, 2개 read-only retrieval 확장, 1개 remediation:
 
-| Skill | When | Tier |
+| 스킬 | 언제 쓰나 | 등급 |
 |---|---|---|
-| `wiki-init` | First-time setup | MVP |
-| `wiki-log` | Record any new entry (experiment, paper, decision, note) | MVP |
-| `wiki-sync` | Daily refresh of the code index + stale-link check + reverse-ref index | MVP |
-| `wiki-deepscan` | Weekly / milestone refresh of the deep knowledge graph | MVP |
-| `wiki-lint` | Audit wiki health — broken links, speculation, gaps, contradictions | MVP |
-| `wiki-query` | Natural-language search over wiki contents (read-only) | extension |
-| `wiki-recall` | Surface stale-but-relevant pages relative to recent activity (read-only) | extension |
-| `wiki-fix-stale` | Walk the researcher through unresolved stale refs and apply per-occurrence-approved body edits | remediation |
+| `wiki-init` | 최초 1회 셋업 | MVP |
+| `wiki-log` | 새 엔트리 기록 (실험 / 논문 / 결정 / 메모) | MVP |
+| `wiki-sync` | 매일 코드 인덱스 갱신 + stale 링크 체크 + 역방향 ref 인덱스 | MVP |
+| `wiki-deepscan` | 주간 / 마일스톤 단위 deep 지식 그래프 갱신 | MVP |
+| `wiki-lint` | 위키 헬스 감사 — 깨진 링크, speculation, 누락, 모순 | MVP |
+| `wiki-query` | 위키 본문 자연어 검색 (read-only) | extension |
+| `wiki-recall` | 최근 활동 대비 stale-but-relevant 페이지 surfacing (read-only) | extension |
+| `wiki-fix-stale` | 미해결 stale ref를 연구자와 함께 순회하며 occurrence 별 승인된 본문 편집 적용 | remediation |
 
-## The eight principles
+## 8개의 원칙
 
-Design is governed by eight numbered principles defined in `ARCHITECTURE.md §1.4` and enforced in `CLAUDE.md`. The most important:
+설계는 `ARCHITECTURE.md §1.4` 에 정의되고 `CLAUDE.md` 에서 강제되는 8개의 번호 매겨진 원칙으로 통제됩니다. 가장 중요한 것:
 
-- **P1 — Fact and interpretation stay separate.**
-- **P3 — Skills propose; they do not mutate interpretation.**
-- **P7 — Every claim has provenance.**
-- **P8 — Analysis yes, speculation no.**
+- **P1 — 사실(fact)과 해석(interpretation)을 분리.**
+- **P3 — 스킬은 제안만 한다. 해석을 묵묵히 변경하지 않는다.**
+- **P7 — 모든 주장은 provenance 를 가진다.**
+- **P8 — 분석은 OK, 추측은 금지.**
 
-P8 is the heart of the design. The LLM agent writes only what it can ground in sources. When it cannot, it says so explicitly. Speculation, if it happens at all, is tagged `[speculation]` and quarantined.
+P8이 설계의 심장입니다. LLM 에이전트는 원천에 근거할 수 있는 것만 씁니다. 근거할 수 없으면 명시적으로 그렇다고 말합니다. 추측은 (만약 발생한다면) `[speculation]` 으로 태그하고 격리합니다.
 
-## Repository layout
+## 저장소 구조
 
 ```
 .
-├── README.md                       ← you are here
-├── ARCHITECTURE.md                 ← full design rationale (read this second)
-├── CLAUDE.md                       ← constitution for LLM agents working on a ResearchWiki repo
-├── skills/                         ← per-skill SPEC.md (design) + SKILL.md (implementation)
-│   ├── wiki-init/                  ← MVP — SPEC.md + SKILL.md + reference/ (constitution + config + templates bundled for init-time copy)
+├── README.md                       ← 지금 여기
+├── ARCHITECTURE.md                 ← 전체 설계 근거 (두 번째로 읽기)
+├── CLAUDE.md                       ← ResearchWiki 저장소에 작용하는 LLM 에이전트의 헌법
+├── skills/                         ← 스킬별 SPEC.md (설계) + SKILL.md (구현)
+│   ├── wiki-init/                  ← MVP — SPEC.md + SKILL.md + reference/ (init-time 복사용 헌법 + 설정 + 템플릿 번들)
 │   ├── wiki-log/                   ← MVP — SPEC.md + SKILL.md
 │   ├── wiki-sync/                  ← MVP — SPEC.md + SKILL.md
 │   ├── wiki-deepscan/              ← MVP — SPEC.md + SKILL.md
@@ -66,79 +66,79 @@ P8 is the heart of the design. The LLM agent writes only what it can ground in s
 │   ├── wiki-query/                 ← extension (retrieval) — SPEC.md + SKILL.md
 │   ├── wiki-recall/                ← extension (surfacing) — SPEC.md + SKILL.md
 │   └── wiki-fix-stale/             ← remediation — SPEC.md + SKILL.md
-├── prompts/                        ← authoring guides
-│   ├── writing-skill-md.md         ← how to author a SKILL.md for this project
-│   ├── enforcing-p8.md             ← the hardest principle, in operational detail
-│   └── skill-interplay-scenarios.md← six worked scenarios of skills composing
-└── docs/                           ← reserved for longer-form docs (TBD)
+├── prompts/                        ← 작성 가이드
+│   ├── writing-skill-md.md         ← 이 프로젝트용 SKILL.md 작성법
+│   ├── enforcing-p8.md             ← 가장 어려운 원칙의 운영 디테일
+│   └── skill-interplay-scenarios.md← 스킬 조합의 6개 워크 스루
+└── docs/                           ← 장문 문서 자리 (TBD)
 ```
 
-Read order for a new contributor:
+신규 컨트리뷰터의 읽는 순서:
 
-1. This README
+1. 이 README
 2. `ARCHITECTURE.md`
 3. `CLAUDE.md`
-4. One skill SPEC.md to get a feel (start with `wiki-log`)
+4. 감을 잡기 위해 한 스킬의 SPEC.md (`wiki-log` 부터)
 5. `prompts/enforcing-p8.md`
 
-## Install as a Claude Code plugin
+## Claude Code 플러그인으로 설치
 
-This repository is a [Claude Code plugin](https://code.claude.com/docs/en/plugins.md) — `.claude-plugin/plugin.json` manifest at the root, eight skills under `skills/`. After install, every skill becomes a slash command namespaced under the plugin name (e.g., `/researchwiki:wiki-log`).
+이 저장소는 [Claude Code 플러그인](https://code.claude.com/docs/en/plugins.md) 입니다 — 루트에 `.claude-plugin/plugin.json` 매니페스트, `skills/` 아래에 8개 스킬. 설치 후 모든 스킬은 플러그인 이름으로 namespace 된 슬래시 커맨드가 됩니다 (예: `/researchwiki:wiki-log`).
 
-**Prerequisite — Python package.** The skills' `SKILL.md` files invoke CLI commands (`wiki-init`, `wiki-log`, `wiki-sync`, ...) that ship with the Python package in this repo. Install it first:
+**전제 조건 — Python 패키지.** 스킬의 `SKILL.md` 가 호출하는 CLI 커맨드(`wiki-init`, `wiki-log`, `wiki-sync`, ...)는 이 저장소의 Python 패키지가 제공합니다. 먼저 설치:
 
 ```bash
-git clone https://github.com/jeongdamilab/skill_factory.git
-cd skill_factory
+git clone https://github.com/apple4ree/researchwiki.git
+cd researchwiki
 pip install -e .
 ```
 
-(The seven Class A skills are pure Python; `wiki-log` is a Python + LLM hybrid — see `ARCHITECTURE.md §3.5`.)
+(7개의 Class A 스킬은 순수 Python; `wiki-log` 만 Python + LLM 하이브리드 — `ARCHITECTURE.md §3.5` 참조.)
 
-**Plugin install.** Two paths:
+**플러그인 설치.** 두 갈래:
 
-- **Local dev** — point Claude Code at the cloned repo:
+- **로컬 개발** — Claude Code를 클론한 저장소로 가리킴:
   ```bash
-  claude --plugin-dir /path/to/skill_factory
+  claude --plugin-dir /path/to/researchwiki
   ```
-  Inside Claude Code: `/researchwiki:wiki-init`, `/researchwiki:wiki-log`, etc.
+  Claude Code 안에서: `/researchwiki:wiki-init`, `/researchwiki:wiki-log`, ...
 
-- **From a marketplace** — once published to a `.claude-plugin/marketplace.json` repo:
+- **Marketplace 경유** — `.claude-plugin/marketplace.json` 저장소에 publish 된 후:
   ```
   /plugin marketplace add <org>/<plugin-repo>
   /plugin install researchwiki@<marketplace-name>
   ```
 
-**Bundle path resolution.** `wiki-init` ships a runtime asset bundle (`skills/wiki-init/reference/bundle/`) that gets copied verbatim to the target repo at init time. The locator (`src/researchwiki/init.py:_find_bundle`) tries env overrides (`RESEARCHWIKI_BUNDLE`, `CLAUDE_PLUGIN_ROOT`) before falling back to the source-relative path. Editable installs (`pip install -e .`) and Claude-Code-managed plugin installs both work without configuration.
+**Bundle 경로 해석.** `wiki-init` 은 init 시점에 대상 저장소로 그대로 복사되는 런타임 자산 번들(`skills/wiki-init/reference/bundle/`)을 함께 배포합니다. locator(`src/researchwiki/init.py:_find_bundle`)는 환경 변수 오버라이드(`RESEARCHWIKI_BUNDLE`, `CLAUDE_PLUGIN_ROOT`) 를 먼저 시도하고, 없으면 source-relative 경로로 fallback. editable install (`pip install -e .`) 과 Claude Code 매니지드 플러그인 설치 둘 다 추가 설정 없이 동작.
 
-## Implemented
+## 구현된 것
 
-Source under `src/researchwiki/`. CLI entry points via `pip install -e .`.
+소스는 `src/researchwiki/` 아래. CLI 진입점은 `pip install -e .` 로 노출.
 
-- **`wiki-init` v0.1** — bootstraps a target repo into a ResearchWiki workspace by copying the bundle (`skills/wiki-init/reference/bundle/{CLAUDE.md, research-wiki.config.yaml, templates/<lang>/}`) into place and seeding the wiki/index/deep/raw/templates directory scaffolding. Substitutes `language.default` per `--language` (only post-copy substitution; otherwise byte-for-byte verbatim). Generates the four wiki meta files (index/log/questions/discrepancies) and appends a first log entry recording the init event. Idempotent — re-runs skip existing files and append a new init log entry. `.gitignore` handling adds `deep/knowledge-graph.json` (idempotent). CLI: `wiki-init [target] --mode new --language ko -y`.
-- **`wiki-sync` v0.1** — Python (stdlib `ast`), JSON (top-level keys), and Markdown (ATX headings, frontmatter / code-fence aware) scanners. Produces `index/signatures.json`, `index/reverse_refs.json`, and per-run `index/snapshots/sync_*.md`. Stale-link pass marks frontmatter `stale: true` and appends to `wiki/questions.md` (idempotent on re-run; never touches wiki page bodies). CLI: `wiki-sync --repo <path>`.
-- **`wiki-lint` v0.1** — all 8 mechanical checks: frontmatter schema, `authored_by` enum, intra-wiki link existence (Obsidian-style root-relative resolution), `refs.code.path` file existence, speculation density (default 0.30 threshold), persistent stale-ref age (default 7 days), cross-page `confidence` conflicts, orphan pages with `seeded_by:` grace period (default 30 days). Meta pages excluded from frontmatter/speculation checks. Audit report + append to `wiki/questions.md` / `wiki/discrepancies.md`. `--strict` for release gating. CLI: `wiki-lint --repo <path>`.
-- **`wiki-deepscan` v0.1** — wrapper around an external knowledge-graph tool (typically Understand-Anything). Loads a graph (or invokes the binary), filters architecturally significant nodes by inbound-edge threshold, seeds wiki concept stubs (frontmatter-only + structural facts + open-questions template — never LLM-authored prose), appends verified `refs.code` to existing same-concept pages, detects naming conflicts (logs to `wiki/questions.md`) and graph-vs-frontmatter discrepancies (logs to `wiki/discrepancies.md`). Writes `deep/knowledge-graph.json`, `deep/last-scan.yaml`, and per-run `deep/deepscan-report-*.md`. `--from-graph <path>` lets you feed a pre-built graph (for testing or non-UA tools). CLI: `wiki-deepscan --repo <path>`.
-- **`wiki-query` v0.1** — BM25 lexical search over wiki contents. Tokenizer splits on identifier delimiters (snake/camel/kebab + dots/slashes) AND keeps the whole chunk for exact-path queries; ko/en mix preserved. Returns ranked page paths with extractive snippets to stdout. Pages with unresolved `stale: true` flags get a `⚠ stale: …` badge prefix. Meta pages skipped by default; `--include-meta` opts in. `--scope`, `--top`, `--frontmatter-only`, `--no-stale-warnings` flags. Stdlib only. CLI: `wiki-query "rotary attention" --repo <path>`.
-- **`wiki-recall` v0.1** — surfaces stale-but-relevant pages by intersecting recent `wiki/log.md` activity refs with stale-page frontmatter. Skill-meta entries (`from wiki-sync`, `from wiki-lint`, `from wiki-deepscan`) filtered by header pattern. Default ref weights: code=2.0, concepts=1.5, papers=1.0, experiments=1.0. `seeded_by:` / `authored_by: llm` empty-body stubs excluded by default; `--include-stubs` opts in. `--lookback`, `--stale-since`, `--scope`, `--top` flags. CLI: `wiki-recall --repo <path>`.
-- **`wiki-sync` v0.2** — three additions on top of v0.1:
-  - `--scan-body` body link rot (opt-in heuristic). Tokenizes wiki page bodies with a multi-cap-PascalCase + dotted + paren-suffix regex (avoids English false-positives like "Use" / "Set"). Records missing tokens as `body_stale_mentions: [{line, token, detected}]` in frontmatter. Implicitly `[unverified]`.
-  - **Rename heuristic.** After the symbol diff, pairs removed × added symbols by same path + line proximity + `difflib` signature similarity (default 0.80). Output as `## Possible renames (heuristic, [unverified])` section in the snapshot. Configurable via `sync.rename_heuristic.{enabled, similarity_threshold, line_window}`.
-  - **End-of-run nag.** When unresolved `stale: true` flags older than `sync.nag_after_days` (default 7) exist, prints `⚠ stale 플래그 N개, X일 이상 미해결. wiki-fix-stale로 처리하시겠어요?`. Suppress with `--no-nag`.
-- **`wiki-fix-stale` v0.1** — the *one* P3-carve-out skill that legitimately edits wiki page bodies, under researcher-initiated invocation + per-occurrence approval + four mechanical transformations (replace symbol with researcher-supplied identifier / wrap with `[deprecated YYYY-MM-DD]` tag / delete the line / skip). After all occurrences on a page are addressed, `stale: true` flags and `body_stale_mentions:` entries are auto-cleared from frontmatter. Walks both frontmatter `refs.code` stale flags AND `body_stale_mentions:` from `wiki-sync --scan-body`. Session record appended to `wiki/log.md`. Atomic per page (mid-page abort discards in-memory edits). Dependency-injected `prompt_fn` and `display_fn` for testability. CLI: `wiki-fix-stale --repo <path>`.
-- **`wiki-log` v0.1 (Python + LLM hybrid)** — the *only* LLM-essential skill. Mechanical core (`src/researchwiki/log.py` + 5 CLI subcommands: `inspect`, `lookup-symbols`, `find-pages`, `find-amend-target`, `run`) handles template parsing (HTML-comment-aware, `{{PLACEHOLDER}}`-quoting), `index/signatures.json` lookup, exact-slug page lookup, atomic write of entry + log.md append + index.md update + bidirectional back-refs + concept stub creation + questions.md append. The conversational interview (italic-guide paraphrasing, P8 detection + three-route flow, identifier/noun-phrase extraction, summary writing) is the LLM's job, guided by 9 reference docs under `skills/wiki-log/reference/` (notably `p8-detection.md`, `conversational-style.md`, `auto-link-extraction.md`, `refusal-patterns.md`, `templates-deep-dive.md`). `authored_by: llm` is rejected by the validator — every entry requires human intent. CLI: `wiki-log {inspect | lookup-symbols | find-pages | find-amend-target | run} ...`.
-- **`docs/CONFIG.md`** and **`docs/TEMPLATES.md`** — user-facing reference docs aggregating per-skill `consumed-config.md` files and the wiki-log template format.
-- **Integration tests** under `tests/integration/` exercise the cross-skill data flow on temp-directory fixtures bootstrapped by `wiki-init`. Five end-to-end scenarios (refactor remediation, weekly audit + query + recall, deepscan stub × lint orphan grace, body link rot round trip, wiki-log full CLI flow) plus two pairwise contracts (recall filters skill-meta log entries, fix-stale clears the same finding lint reports).
+- **`wiki-init` v0.1** — 번들(`skills/wiki-init/reference/bundle/{CLAUDE.md, research-wiki.config.yaml, templates/<lang>/}`)을 대상 저장소로 복사하고 wiki/index/deep/raw/templates 디렉토리 골격을 만들어 ResearchWiki 워크스페이스로 부트스트랩. `--language` 에 따라 `language.default` 만 후처리 치환 (그 외엔 byte-for-byte 그대로). 4개 wiki 메타 파일(index/log/questions/discrepancies) 생성, init 이벤트를 첫 log entry 로 append. Idempotent — 재실행 시 기존 파일 skip 후 새 init 로그만 추가. `.gitignore` 에 `deep/knowledge-graph.json` 추가 (idempotent). CLI: `wiki-init [target] --mode new --language ko -y`.
+- **`wiki-sync` v0.1** — Python (stdlib `ast`), JSON (top-level keys), Markdown (ATX headings, frontmatter / code-fence aware) 스캐너. `index/signatures.json`, `index/reverse_refs.json`, 실행별 `index/snapshots/sync_*.md` 생성. Stale-link pass가 frontmatter `stale: true` 표시 + `wiki/questions.md` append (재실행 시 idempotent; 위키 본문은 절대 건드리지 않음). CLI: `wiki-sync --repo <path>`.
+- **`wiki-lint` v0.1** — 8개의 mechanical check: frontmatter schema, `authored_by` enum, intra-wiki 링크 존재(Obsidian-style root-relative 해석), `refs.code.path` 파일 존재, speculation 밀도(default 0.30 임계치), 지속 stale-ref 나이(default 7일), cross-page `confidence` 충돌, `seeded_by:` grace period(default 30일) 가진 orphan 페이지. 메타 페이지는 frontmatter/speculation 검사에서 제외. 감사 리포트 + `wiki/questions.md` / `wiki/discrepancies.md` append. release gating용 `--strict`. CLI: `wiki-lint --repo <path>`.
+- **`wiki-deepscan` v0.1** — 외부 지식 그래프 도구(주로 Understand-Anything)의 wrapper. 그래프를 로드(혹은 바이너리 호출)하고, inbound-edge 임계치로 architecturally significant 노드 필터링, wiki concept stub seeding (frontmatter-only + 구조적 사실 + open-questions 템플릿 — LLM이 prose 작성 절대 안 함), 같은 concept 의 기존 페이지에 verified `refs.code` append, naming 충돌(→ `wiki/questions.md`)과 graph-vs-frontmatter 불일치(→ `wiki/discrepancies.md`) 감지. `deep/knowledge-graph.json`, `deep/last-scan.yaml`, 실행별 `deep/deepscan-report-*.md` 작성. `--from-graph <path>` 로 미리 빌드된 그래프 주입 가능 (테스트 / 비-UA 도구용). CLI: `wiki-deepscan --repo <path>`.
+- **`wiki-query` v0.1** — 위키 본문 BM25 lexical 검색. 토크나이저는 식별자 구분자(snake/camel/kebab + 점/슬래시)로 분할하면서도 정확 경로 검색을 위해 통째 청크도 보존; ko/en 혼용 유지. 추출형 스니펫과 함께 ranked 페이지 경로를 stdout 출력. 미해결 `stale: true` 플래그가 있는 페이지는 `⚠ stale: …` 배지 prefix 부착. 메타 페이지는 기본 제외; `--include-meta` 로 포함. `--scope`, `--top`, `--frontmatter-only`, `--no-stale-warnings` 플래그. stdlib 만 사용. CLI: `wiki-query "rotary attention" --repo <path>`.
+- **`wiki-recall` v0.1** — 최근 `wiki/log.md` 활동 ref 와 stale 페이지 frontmatter 의 교집합으로 stale-but-relevant 페이지를 surfacing. 스킬-메타 entry(`from wiki-sync`, `from wiki-lint`, `from wiki-deepscan`)는 헤더 패턴으로 필터. 기본 ref 가중치: code=2.0, concepts=1.5, papers=1.0, experiments=1.0. `seeded_by:` / `authored_by: llm` 인 빈-본문 stub은 기본 제외; `--include-stubs` 로 포함. `--lookback`, `--stale-since`, `--scope`, `--top` 플래그. CLI: `wiki-recall --repo <path>`.
+- **`wiki-sync` v0.2** — v0.1 위에 세 가지 추가:
+  - `--scan-body` body link rot (opt-in 휴리스틱). 위키 본문을 multi-cap-PascalCase + dotted + paren-suffix 정규식으로 토큰화 (영어 false positive `Use` / `Set` 등 회피). index에 없는 토큰을 frontmatter 의 `body_stale_mentions: [{line, token, detected}]` 로 기록. 암묵적 `[unverified]`.
+  - **Rename 휴리스틱.** 심볼 diff 후 same path + 라인 근접성 + `difflib` signature 유사도(default 0.80)로 removed × added 심볼 페어링. snapshot 의 `## Possible renames (heuristic, [unverified])` 섹션에 출력. `sync.rename_heuristic.{enabled, similarity_threshold, line_window}` 로 설정.
+  - **End-of-run nag.** `sync.nag_after_days`(default 7) 보다 오래된 미해결 `stale: true` 플래그 존재 시 `⚠ stale 플래그 N개, X일 이상 미해결. wiki-fix-stale로 처리하시겠어요?` 출력. `--no-nag` 로 억제.
+- **`wiki-fix-stale` v0.1** — 위키 본문을 합법적으로 편집하는 *유일한* P3-carve-out 스킬. 연구자-주도 호출 + occurrence 별 승인 + 4개 mechanical 변환(연구자가 제공한 식별자로 심볼 교체 / `[deprecated YYYY-MM-DD]` 태그로 감싸기 / 라인 삭제 / skip)만 수행. 페이지의 모든 occurrence가 처리되면 `stale: true` 플래그와 `body_stale_mentions:` entry 가 frontmatter에서 자동 클리어. frontmatter `refs.code` stale 플래그 AND `wiki-sync --scan-body` 의 `body_stale_mentions:` 둘 다 순회. 세션 기록을 `wiki/log.md` 에 append. 페이지 단위 atomic (페이지 중간 abort 시 in-memory 편집 폐기). 테스트 가능성을 위한 의존성 주입 `prompt_fn` / `display_fn`. CLI: `wiki-fix-stale --repo <path>`.
+- **`wiki-log` v0.1 (Python + LLM 하이브리드)** — *유일한* LLM-필수 스킬. Mechanical core(`src/researchwiki/log.py` + 5개 CLI 서브커맨드: `inspect`, `lookup-symbols`, `find-pages`, `find-amend-target`, `run`)가 템플릿 파싱(HTML 주석 처리, `{{PLACEHOLDER}}` 인용), `index/signatures.json` 조회, exact-slug 페이지 조회, entry + log.md append + index.md 갱신 + 양방향 back-ref + concept stub 생성 + questions.md append 의 atomic write를 담당. 대화형 인터뷰(이탤릭 가이드 paraphrase, P8 감지 + 3-route 흐름, identifier / 명사구 추출, 요약 작성)는 LLM의 몫이며 `skills/wiki-log/reference/` 의 9개 reference 문서 (`p8-detection.md`, `conversational-style.md`, `auto-link-extraction.md`, `refusal-patterns.md`, `templates-deep-dive.md` 등) 가 가이드. `authored_by: llm` 은 validator 가 거부 — 모든 entry 는 사람의 의도를 요구. CLI: `wiki-log {inspect | lookup-symbols | find-pages | find-amend-target | run} ...`.
+- **`docs/CONFIG.md`** 와 **`docs/TEMPLATES.md`** — 사용자용 reference 문서. 스킬별 `consumed-config.md` 와 wiki-log 템플릿 포맷을 모은 통합본.
+- **Integration 테스트** — `tests/integration/` 아래. `wiki-init` 으로 부트스트랩한 임시 디렉토리 fixture 위에서 cross-skill 데이터 흐름 검증. 5개의 end-to-end 시나리오(refactor remediation, weekly audit + query + recall, deepscan stub × lint orphan grace, body link rot round trip, wiki-log 전체 CLI 흐름) + 2개의 pairwise 계약(recall이 스킬-메타 로그 entry 를 필터, fix-stale이 lint 가 보고하는 같은 finding 을 클리어).
 
-168 tests, all passing (159 unit + 9 integration).
+168 테스트 전부 통과 (159 unit + 9 integration).
 
-## Not yet done
+## 아직 안 된 것
 
-- Other-language scanners for `wiki-sync` (TypeScript / JavaScript via tree-sitter, ctags fallback)
+- `wiki-sync` 의 다른 언어 스캐너 (TypeScript / JavaScript via tree-sitter, ctags fallback)
 - Release packaging (license, classifiers, CI, PyPI)
 
-## License and status
+## 라이선스 / 상태
 
-This project is designed with eventual open-source release in mind. License selection and release timing are at the author's discretion.
+이 프로젝트는 궁극적인 오픈소스 공개를 염두에 두고 설계되었습니다. 라이선스 선정 및 공개 시점은 저자의 판단에 따릅니다.
 
-Citations to Codified Context (arXiv:2602.20478) and Understand-Anything (github.com/Lum1104/Understand-Anything) are mandatory in any derivative work.
+파생 작업에는 Codified Context (arXiv:2602.20478)와 Understand-Anything (github.com/Lum1104/Understand-Anything) 인용이 필수입니다.
