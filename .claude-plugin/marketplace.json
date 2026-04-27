@@ -12,7 +12,7 @@
       "name": "researchwiki",
       "description": "Eight skills (init, log, sync, deepscan, lint, query, recall, fix-stale) maintaining a wiki layer (interpretation), an index layer (facts), and an optional deep layer (knowledge graph) alongside research code.",
       "version": "0.1.0",
-      "source": ".",
+      "source": "./",
       "category": "development",
       "author": {
         "name": "ResearchWiki contributors",
