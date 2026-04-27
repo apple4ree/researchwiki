@@ -1,6 +1,6 @@
 ---
 name: wiki-log
-description: Use this skill when the researcher wants to add a new entry to their research journal — an experiment result, a paper summary, a design decision, or a free-form observation. This is the most-used ResearchWiki skill, invoked multiple times per day. The skill is a *Python + LLM hybrid*: deterministic operations (template parsing, frontmatter assembly, atomic file writes, code-symbol lookup, bidirectional back-refs) run via the `wiki log <subcommand>` CLI; the conversational interview, P8 speculation detection, identifier/noun-phrase extraction, and summary writing are the LLM's job. Trigger phrases include "기록할래", "실험 결과 정리해줘", "이 논문 읽었어", "디자인 결정 남겨줘", "wiki에 추가해", "log this", "add to wiki", "record the experiment", "file this paper reading", "log a decision". Do not use for regenerating the code index (use `wiki-sync`), running deep code analysis (use `wiki-deepscan`), auditing existing wiki content (use `wiki-lint`), initializing the workspace (use `wiki-init`), or editing the body of an existing wiki page (use `wiki-fix-stale` for stale-ref body edits, or refuse per `reference/refusal-patterns.md` §1).
+description: Use this skill when the researcher wants to add a new entry to their research journal — an experiment result, a paper summary, a design decision, or a free-form observation. This is the most-used ResearchWiki skill, invoked multiple times per day. The skill is a *Python + LLM hybrid* that runs in **conversation-as-source mode by default**: extract candidate entries from the recent conversation, validate them with `wiki log validate-candidate` (P8 marker detection, ref resolution, collision check), then present a batch with status flags so the researcher chooses per-entry depth — `[a]` auto-save clean ones, `[r]` review only flagged sections, `[f]` full interview, `[d]` drop. Most calls produce 0–3 questions instead of the prior 12–15. Three friction dials: `--default` (recommended), `--strict` (always review), `--quick` (auto-save all, tag P8 markers as `[speculation]`). Trigger phrases include "기록할래", "실험 결과 정리해줘", "이 논문 읽었어", "디자인 결정 남겨줘", "wiki에 추가해", "log this", "add to wiki", "record the experiment", "file this paper reading", "log a decision". Do not use for regenerating the code index (use `wiki-sync`), running deep code analysis (use `wiki-deepscan`), auditing existing wiki content (use `wiki-lint`), initializing the workspace (use `wiki-init`), or editing the body of an existing wiki page (use `wiki-fix-stale` for stale-ref body edits, or refuse per `reference/refusal-patterns.md` §1).
 ---
 
 # wiki-log
@@ -168,76 +168,185 @@ JSON file (or piped stdin) handed to `wiki log run`:
 }
 ```
 
-## The full flow (every invocation)
+## The flow — Conversation-as-source (default)
 
-1. **Parse the trigger.** Extract `--type` and `--title` from the
-   researcher's first message. If either is missing, ask one focused
-   question per missing field. Don't chain.
+Default mental model: the *current conversation* is the raw material.
+You don't run a fresh interview — you extract candidate entries from
+what the researcher already said, present a batch with status flags,
+and ask only about flagged items. This is dramatically less friction
+than the prior interview-first model and is the recommended path.
 
-2. **`wiki log inspect`.** Get the template + path + workspace state.
-   - `collision: true` → invoke the collision flow
-     (`reference/refusal-patterns.md` §5).
-   - `signatures_available: false` → warn, disable code auto-link
-     extraction, continue.
+The full eight-step interview model is still available via `--full`
+mode (see below) for high-stakes entries, but for daily journaling
+**default to the batch-extraction flow**.
 
-3. **Walk sections.** For each section in `template.sections`:
-   - Read the italic_guide internally; paraphrase to a natural
-     question in the session language. **Never read italic verbatim.**
-     (`reference/conversational-style.md` §1)
-   - Wait for answer. Empty `[required]` → re-ask once. If still
-     empty, abort or accept "no notable patterns" with researcher
-     confirmation.
-   - Run P8 detection on each answer. Hits → invoke the three-route
-     flow (`reference/p8-detection.md` §1). Encode the chosen route
-     into the payload before submission.
+### Step 1 — Read recent conversation context
 
-4. **Optional sections as a batch.** After all `[required]` filled,
-   offer `[optional]` as a group ("선택 섹션 N개 남았어: ...").
+When the researcher invokes wiki-log (`/researchwiki:wiki-log`,
+"기록해줘", "log this", etc.), scan the recent conversation in this
+session. Identify segments that look like loggable events:
 
-5. **Auto-link extraction.** For each kind with
-   `template_directives.auto_link.<kind>.enabled: true`:
-   - Extract candidates from `section_answers` per
-     `reference/auto-link-extraction.md`.
-   - Run `wiki log lookup-symbols` (for `code`) or
-     `wiki log find-pages` (for `experiments` / `concepts` / `papers`).
-   - Build the candidate list; failed concept candidates → stub
-     suggestion batch.
+- **Experiment results** — they ran something and reported numbers /
+  observations.
+- **Paper readings** — they discussed a paper's claims / methods.
+- **Decisions** — they chose X over Y with stated reasons.
+- **Free notes** — bug reports, ideas, observations worth keeping.
 
-6. **Approval batches.** Two batches in order:
-   - **Auto-link candidates** — single y/N/edit prompt
-     (`reference/conversational-style.md` §5).
-   - **Concept stub suggestions** — separate y/N/edit prompt for
-     candidates that failed `find-pages --kind concepts`.
+For each segment, draft a candidate. Multiple candidates from one
+session are fine — the batch UI handles them.
 
-7. **Summary line.** Default to the first `[required]` answer if it
-   is one short sentence; otherwise ask
-   (`reference/conversational-style.md` §6).
+### Step 2 — Build draft candidates
 
-8. **Assemble payload.** Build the JSON dict per the schema above.
-   Set `authored_by: hybrid` (or `human` if researcher dictated
-   verbatim). Write to a temp file (or stdin-pipe).
+For each candidate:
+- Pick a `type` (`experiment` / `paper` / `decision` / `free`).
+- Compute a slug `title` (e.g., `lr-sweep-bs256` from researcher's
+  prose mentioning a learning rate sweep at batch size 256).
+- Run `wiki log inspect --type T --title X` once to get template
+  metadata (sections + auto-link directives).
+- Extract `section_answers` from the conversation, mapping researcher's
+  utterances onto the template's required + optional sections.
+- Extract identifier tokens / noun phrases / experiment-IDs / paper-slugs
+  into `extracted_refs` (don't filter yet — that's the validator's job).
 
-9. **`wiki log run --payload <file>`.** Atomic write. On success,
-   render the result concisely (`reference/conversational-style.md` §7).
-   On failure (FileExistsError / ValueError), surface the message
-   and route accordingly.
+This gives you a `CandidateDraft` JSON per candidate.
 
-### Quick mode
+### Step 3 — Validate each candidate
 
-`--quick` skips steps 5–6 (auto-link extraction + approval batches +
-stub suggestion). Required-field validation, P8 enforcement, and
-`authored_by` discipline still apply.
+Pipe each draft through:
+
+```bash
+wiki log validate-candidate --draft <draft.json>
+```
+
+Returns a `CandidateValidation` JSON with:
+- `status`: `ok` / `needs-review` / `fatal`
+- `issues`: list of `{kind, severity, ...}` — `missing-required`,
+  `p8-marker`, `ref-unresolved`, `stub-candidate`, `collision`
+- `ref_resolution`: per-ref-kind matched/unmatched details
+- `collision`: bool
+- `entry_path`: where it would be written
+
+### Step 4 — Present batch to researcher
+
+Render a compact summary, one line per candidate, with status icon:
+
+```
+[wiki-log] 최근 대화에서 3개 후보 발견:
+
+  [1] ✓ experiment / lr-sweep-bs256
+      모든 섹션 추출됨, 깨끗
+      refs: trainer.py:train_one_epoch (verified), exp-2026-04-22-bs128
+
+  [2] ⚠ experiment / nan-debug
+      "관찰" 에 P8 마커 1개 ("lr 때문에 ... 발생했을 것")
+      refs: 없음
+
+  [3] ⚠ decision / adopt-postgres
+      "근거" 에 P8 마커 2개
+      "options considered" 누락 (optional)
+      stub 후보: postgres-migration
+
+저장 방식?
+  [a] 모두 자동저장 (P8 마커는 [speculation] 자동 부착, 누락 optional 은 빈 칸)
+  [r] 1 자동, 2·3 만 review (예상 질문 3~4개)
+  [f] 전부 full interview (예상 질문 12~15개)
+  개별 지정: 1=a 2=r 3=f
+  [d 1] 1번만 drop, 나머지는 review
+```
+
+**Default: `[r]`.** Auto-save clean candidates, review only flagged.
+
+### Step 5 — Per-tier handling
+
+For each selected tier:
+
+#### `[a]` Auto-save (clean only)
+
+Skip questions entirely. Build `LogPayload`:
+- `section_answers` from draft as-is.
+- `approved_refs` from `ref_resolution` — only `matched: true` items.
+- `approved_stubs` from `stub-candidate` issues — auto-create the
+  suggested slug. **(This is the one auto-action under `[a]`.)**
+- `summary_line` = first sentence of the first required section.
+- `authored_by: hybrid`, `auto_extracted: true` in `extra_frontmatter`.
+- For P8-flagged sections in auto-save mode, prepend `[speculation]`
+  to the flagged span (do NOT route to questions.md silently — that
+  changes information; tagging in place preserves it).
+
+Then call `wiki log run --payload <file>`.
+
+#### `[r]` Review (default)
+
+For each flagged item only:
+- **P8 marker** → run the three-route flow (`reference/p8-detection.md` §1)
+  on that section only. Don't re-ask other sections.
+- **missing-required** → ask one focused question for that section.
+- **ref-unresolved** → ask "이거 verified 로? inferred 로? 빼?".
+- **stub-candidate** → ask y/N/edit per phrase.
+
+After flagged items are resolved, build payload + `wiki log run`.
+
+#### `[f]` Full interview
+
+Fall back to the legacy step-by-step interview (the prior 9-step model).
+See "Legacy `--full` interview model" at the bottom of this file.
+
+#### `[d N]` Drop
+
+Don't save candidate N. No file written.
+
+### Step 6 — Report
+
+After all selected candidates are processed:
+
+```
+✓ wiki/experiments/exp-2026-04-23-lr-sweep-bs256.md created  ([a])
+✓ wiki/experiments/exp-2026-04-23-nan-debug.md created       ([r], 1 P8 question resolved)
+✗ wiki/decisions/adopt-postgres.md skipped                   ([d])
+✓ Concept stub: wiki/concepts/postgres-migration.md
+✓ wiki/log.md, wiki/index.md updated
+```
+
+## Tier modes — friction dial
+
+The default flow above maps to `--default` (i.e., omitted). Two other
+modes shift the question budget:
+
+- **`--strict`** — even "ok" candidates go through review (no auto-save).
+  For paper / decision entries where curation matters more than speed.
+- **`--quick`** — auto-save *all* candidates regardless of P8 flags
+  (markers get `[speculation]` tags but no questions). For inbox-style
+  rapid capture; pair with `wiki-lint` periodically to catch drift.
+
+## Legacy `--full` interview model
+
+If the researcher invokes `wiki-log --full`, OR a candidate is
+selected with `=f`, OR no recent conversation context exists (e.g.,
+fresh session), fall back to the explicit interview:
+
+1. Parse `--type` / `--title` flags or ask.
+2. `wiki log inspect`. Handle collision.
+3. Walk sections in order, paraphrasing italic guides into natural
+   questions (`reference/conversational-style.md` §1). P8 detect on
+   each answer.
+4. Optional sections as a batch.
+5. Extract candidates → `wiki log lookup-symbols` / `find-pages`.
+6. Approval batches (auto-link + stub suggestion).
+7. Summary line.
+8. Assemble payload, `wiki log run`.
+
+This is the prior heavy-friction model. Available but no longer the
+default — most invocations take the conversation-as-source path.
 
 ### Amend mode
 
-`--amend` replaces step 1's `inspect` with `wiki log find-amend-target
+`--amend` replaces the candidate flow with `wiki log find-amend-target
 --type T`. If null, run the expired-window flow
 (`reference/refusal-patterns.md` §6). Otherwise, show the body preview
-and ask what to change. Apply via direct `Edit` (file in place — this
-is the only case where wiki-log touches an existing entry's body, and
-only because the researcher is amending *their own recent entry* in
-`--amend` mode within the configured window). Append a single amend
-note to `wiki/log.md`.
+and ask what to change. Apply via direct `Edit` (file in place — the
+only case where wiki-log touches an existing entry's body, and only
+because the researcher is amending *their own recent entry* within
+the configured window). Append a single amend note to `wiki/log.md`.
 
 ## Reasoning resources (`reference/`)
 

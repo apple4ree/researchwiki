@@ -126,6 +126,7 @@ Some skills add **optional fields** to specific pages (this is not a free-for-al
 - `body_stale_mentions: [{line, token, detected}]` — written by `wiki-sync` when invoked with `--scan-body`. Heuristic, implicitly `[unverified]`.
 - `seeded_by: wiki-log | wiki-deepscan` and `seed_context: { from_entry, from_phrase | from_node_id, ... }` — written when the page is auto-created as a stub. Marks pages whose body is initially empty, for downstream skills (notably `wiki-lint`'s orphan check) to give grace-period treatment.
 - `tags: [auto-seeded]` — added by `wiki-deepscan` to graph-seeded stubs.
+- `auto_extracted: true` — added by `wiki-log` when an entry is created via the conversation-as-source `[a]` (auto-save) tier without an explicit interview. Marks entries whose section content was extracted from chat transcripts rather than dictated. `wiki-lint` may sample these for spot-checks; downstream consumers know the curation depth was lighter.
 
 Do not invent additional optional fields without extending this list.
 

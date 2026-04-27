@@ -25,12 +25,14 @@ from researchwiki.fixstale import run_fix_stale
 from researchwiki.init import run_init
 from researchwiki.lint import run_lint
 from researchwiki.log import (
+    CandidateDraft,
     LogPayload,
     find_amend_target,
     find_pages,
     inspect_template,
     lookup_code_symbols,
     run_log,
+    validate_candidate,
 )
 from researchwiki.query import format_results as format_query_results
 from researchwiki.query import load_pages, search
@@ -487,6 +489,14 @@ def log_main(argv: list[str] | None = None) -> int:
     p_amend.add_argument("--type", required=True, choices=["experiment", "paper", "decision", "free"])
     p_amend.add_argument("--window-hours", type=int, default=24)
 
+    p_validate = sub.add_parser(
+        "validate-candidate",
+        help="Validate an extracted candidate draft (conversation-as-source flow).",
+    )
+    p_validate.add_argument("--repo", default=".")
+    p_validate.add_argument("--draft", required=True,
+                            help="Path to candidate draft JSON file (or '-' for stdin).")
+
     p_run = sub.add_parser("run", help="Atomic write phase from payload JSON.")
     p_run.add_argument("--repo", default=".")
     p_run.add_argument("--payload", required=True, help="Path to payload JSON file (or '-' for stdin).")
@@ -532,6 +542,17 @@ def log_main(argv: list[str] | None = None) -> int:
             json.dump(payload_out, sys.stdout, ensure_ascii=False, indent=2)
             sys.stdout.write("\n")
             return 0 if target else 1
+
+        if args.subcommand == "validate-candidate":
+            if args.draft == "-":
+                data = json.load(sys.stdin)
+            else:
+                data = json.loads(Path(args.draft).read_text(encoding="utf-8"))
+            draft = CandidateDraft.from_json(data)
+            result = validate_candidate(repo, draft=draft)
+            json.dump(result.to_json(), sys.stdout, ensure_ascii=False, indent=2)
+            sys.stdout.write("\n")
+            return 0
 
         if args.subcommand == "run":
             if args.payload == "-":

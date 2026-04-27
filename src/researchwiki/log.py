@@ -258,6 +258,251 @@ class LogResult:
 
 
 # ---------------------------------------------------------------------
+# Conversation-as-source candidate validation
+# ---------------------------------------------------------------------
+
+
+@dataclass
+class CandidateDraft:
+    """LLM-produced draft entry extracted from conversation context.
+
+    Section answers are the LLM's first-pass extraction; extracted_refs
+    are *raw* tokens / phrases / IDs found in the prose, not yet
+    confirmed against signatures.json or the wiki. Both go through
+    `validate_candidate` to get a status the LLM uses to drive the
+    batch UI ([a]uto-save / [r]eview / [f]ull / [d]rop).
+    """
+
+    type: str
+    title: str
+    today: str
+    session_id: str
+    section_answers: dict[str, str] = field(default_factory=dict)
+    extracted_refs: dict = field(default_factory=lambda: {
+        "code_tokens": [],
+        "concepts_phrases": [],
+        "experiments_ids": [],
+        "papers_slugs": [],
+    })
+    git_ref: str | None = None
+    summary_line: str = ""
+
+    @classmethod
+    def from_json(cls, data: dict) -> "CandidateDraft":
+        return cls(
+            type=data["type"],
+            title=data["title"],
+            today=data["today"],
+            session_id=data["session_id"],
+            section_answers=data.get("section_answers", {}),
+            extracted_refs=data.get("extracted_refs", {
+                "code_tokens": [], "concepts_phrases": [],
+                "experiments_ids": [], "papers_slugs": [],
+            }),
+            git_ref=data.get("git_ref"),
+            summary_line=data.get("summary_line", ""),
+        )
+
+
+@dataclass
+class CandidateValidation:
+    """Output of `validate_candidate` — annotates the draft for the LLM."""
+
+    type: str
+    title: str
+    entry_path: str
+    status: Literal["ok", "needs-review", "fatal"]
+    issues: list[dict]
+    ref_resolution: dict
+    collision: bool
+
+    def to_json(self) -> dict:
+        return {
+            "type": self.type,
+            "title": self.title,
+            "entry_path": self.entry_path,
+            "status": self.status,
+            "issues": self.issues,
+            "ref_resolution": self.ref_resolution,
+            "collision": self.collision,
+        }
+
+
+def validate_candidate(
+    repo_root: Path, *, draft: CandidateDraft,
+) -> CandidateValidation:
+    """Validate an extracted candidate against the workspace.
+
+    Checks (in order):
+      1. Template parses; required-section completeness.
+      2. P8 first-pass markers in section answers (regex-based; LLM refines).
+      3. Ref resolution — code tokens against signatures.json, concept
+         phrases against wiki/concepts/, experiment IDs against
+         wiki/experiments/, paper slugs against wiki/papers/.
+      4. Path collision against the would-be entry file.
+
+    Returns a `CandidateValidation` with a high-level `status`:
+      - `fatal`: cannot save (e.g., missing required section, collision).
+      - `needs-review`: P8 markers present, or ambiguous/unresolved refs;
+        the LLM should ask the researcher about flagged items only.
+      - `ok`: clean — auto-save in the [a] tier is safe.
+    """
+    from researchwiki.p8 import scan_section_answers
+
+    if draft.type not in VALID_TYPES:
+        raise ValueError(f"unknown --type {draft.type!r}")
+    repo_root = repo_root.resolve()
+    today = date.fromisoformat(draft.today)
+
+    template_path = _resolve_template_path(repo_root, draft.type)
+    template = _parse_template(template_path, type=draft.type)
+
+    issues: list[dict] = []
+
+    # 1. Required-section completeness.
+    for section in template.sections:
+        if section.required:
+            answer = (draft.section_answers.get(section.title) or "").strip()
+            if not answer:
+                issues.append({
+                    "kind": "missing-required",
+                    "severity": "fatal",
+                    "section": section.title,
+                })
+
+    # 2. P8 markers.
+    for m in scan_section_answers(draft.section_answers):
+        issues.append({
+            "kind": "p8-marker",
+            "severity": "review",
+            "section": m.section,
+            "marker": m.marker,
+            "marker_kind": m.kind,
+            "span": [m.start, m.end],
+        })
+
+    # 3. Ref resolution.
+    refs_in = draft.extracted_refs or {}
+    code_tokens = refs_in.get("code_tokens") or []
+    concept_phrases = refs_in.get("concepts_phrases") or []
+    experiment_ids = refs_in.get("experiments_ids") or []
+    paper_slugs = refs_in.get("papers_slugs") or []
+
+    code_resolution: list[dict] = []
+    if code_tokens:
+        for cm in lookup_code_symbols(repo_root, tokens=code_tokens):
+            code_resolution.append(cm.to_json())
+            if not cm.matched:
+                issues.append({
+                    "kind": "ref-unresolved",
+                    "severity": "review",
+                    "ref_kind": "code",
+                    "token": cm.token,
+                })
+
+    concept_resolution: list[dict] = []
+    if concept_phrases:
+        slugs = [_slugify_concept(p) for p in concept_phrases]
+        page_matches = find_pages(repo_root, kind="concepts", ids=slugs)
+        for phrase, pm in zip(concept_phrases, page_matches):
+            concept_resolution.append({
+                "phrase": phrase,
+                "slug": pm.id,
+                "matched": pm.matched,
+                "path": pm.path,
+                "stub_candidate": not pm.matched,
+            })
+            if not pm.matched:
+                issues.append({
+                    "kind": "stub-candidate",
+                    "severity": "review",
+                    "phrase": phrase,
+                    "slug": pm.id,
+                })
+
+    experiment_resolution: list[dict] = []
+    if experiment_ids:
+        for pm in find_pages(repo_root, kind="experiments", ids=experiment_ids):
+            experiment_resolution.append(pm.to_json())
+            if not pm.matched:
+                issues.append({
+                    "kind": "ref-unresolved",
+                    "severity": "review",
+                    "ref_kind": "experiments",
+                    "id": pm.id,
+                })
+
+    paper_resolution: list[dict] = []
+    if paper_slugs:
+        for pm in find_pages(repo_root, kind="papers", ids=paper_slugs):
+            paper_resolution.append(pm.to_json())
+            if not pm.matched:
+                issues.append({
+                    "kind": "ref-unresolved",
+                    "severity": "review",
+                    "ref_kind": "papers",
+                    "slug": pm.id,
+                })
+
+    # 4. Collision.
+    entry_path = _compute_entry_path(repo_root, type=draft.type,
+                                     title=draft.title, today=today)
+    collision = entry_path.exists()
+    if collision:
+        issues.append({
+            "kind": "collision",
+            "severity": "fatal",
+            "entry_path": str(entry_path.relative_to(repo_root)),
+        })
+
+    # Roll up status.
+    has_fatal = any(i["severity"] == "fatal" for i in issues)
+    if has_fatal:
+        status: Literal["ok", "needs-review", "fatal"] = "fatal"
+    elif issues:
+        status = "needs-review"
+    else:
+        status = "ok"
+
+    return CandidateValidation(
+        type=draft.type,
+        title=draft.title,
+        entry_path=str(entry_path.relative_to(repo_root)),
+        status=status,
+        issues=issues,
+        ref_resolution={
+            "code": code_resolution,
+            "concepts": concept_resolution,
+            "experiments": experiment_resolution,
+            "papers": paper_resolution,
+        },
+        collision=collision,
+    )
+
+
+def _slugify_concept(phrase: str) -> str:
+    """Turn a noun phrase into a slug per reference/auto-link-extraction.md §5.
+
+    Lowercase, ASCII spaces → hyphens, strip leading articles, drop
+    trailing 's' (heuristic). Korean characters are preserved as-is.
+    """
+    s = phrase.strip().lower()
+    # Strip leading English articles only — Korean has none.
+    for prefix in ("the ", "a ", "an "):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    # Spaces / punctuation → hyphens; collapse runs.
+    s = re.sub(r"[\s_/]+", "-", s)
+    s = re.sub(r"[^\w\-]", "", s, flags=re.UNICODE)
+    s = re.sub(r"-+", "-", s).strip("-")
+    # Trailing s heuristic — only for ASCII (avoid mangling Korean).
+    if s.endswith("s") and s[-2:-1].isascii() and not s.endswith("ss"):
+        s = s[:-1]
+    return s
+
+
+# ---------------------------------------------------------------------
 # Public — inspect
 # ---------------------------------------------------------------------
 
